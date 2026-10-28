@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine3.24
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "work_mem=4MB", "-c", "maintenance_work_mem=64MB", "-c", "max_connections=30"]
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+  synapse:
+    image: matrixdotorg/synapse:v1.161.0
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      SYNAPSE_NO_TLS: "true"
+    volumes:
+      - ./data/synapse:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/_matrix/client/versions', timeout=3)\""]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+  nginx:
+    image: nginx:1.30.6-alpine3.24-slim
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      synapse: {condition: service_healthy}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/site.conf:/etc/nginx/conf.d/site.conf:ro
+      - ./data/element:/usr/share/nginx/html:ro
+      - ./data/acme:/var/www/acme:ro
+      - ./secrets/tls:/etc/nginx/tls:ro
+    networks: [frontend, backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+networks:
+  frontend: {}
+  backend:
+    internal: true

@@ -1,0 +1,8 @@
+.env
+data/
+secrets/
+offline-bundle/
+backups/
+*.tar
+*.sha256
+__pycache__/

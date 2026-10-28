@@ -1,0 +1,13 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "https://ct.koten.ir",
+      "server_name": "ct.koten.ir"
+    }
+  },
+  "disable_custom_urls": true,
+  "disable_guests": true,
+  "brand": "Koten Chat",
+  "default_federate": false,
+  "show_labs_settings": false
+}
