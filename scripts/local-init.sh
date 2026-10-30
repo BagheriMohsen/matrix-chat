@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [[ ! -f .env ]]; then
+  [[ ! -d data/postgres && ! -d data/synapse ]] || {
+    echo "Existing data has no .env; restore its original credentials before continuing." >&2
+    exit 1
+  }
+  umask 077
+  python3 - <<'PY'
+from pathlib import Path
+import os
+import secrets
+
+template = Path(".env.example").read_text()
+marker = "replace-with-a-long-random-password"
+if template.count(marker) != 1:
+    raise SystemExit("Unexpected .env.example password placeholder")
+content = template.replace(marker, secrets.token_urlsafe(48))
+with os.fdopen(os.open(".env", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as file:
+    file.write(content)
+PY
+fi
+[[ -f .env ]] || { echo ".env is missing." >&2; exit 1; }
+if grep -q '^POSTGRES_PASSWORD=replace-with-a-long-random-password$' .env; then
+  echo "Replace the example database password before continuing." >&2
+  exit 1
+fi
+
+scripts/init.sh
+
+# The local config changes only the client-facing URL; the Matrix identity and
+# signing key stay in the existing production configuration and data directory.
+docker run --rm --pull never -i -v "$PWD/data/synapse:/data" \
+  --entrypoint python3 matrixdotorg/synapse:v1.161.0 - <<'PY'
+from pathlib import Path
+import os
+
+original = Path("/data/homeserver.yaml").read_text()
+old = 'public_baseurl: "https://ct.koten.ir/"'
+if original.count(old) != 1:
+    raise SystemExit("Expected production public_baseurl was not found; preserving existing configuration")
+local = original.replace(old, 'public_baseurl: "http://localhost:8080/"', 1)
+target = Path("/data/homeserver.local.yaml")
+if target.exists():
+    if target.read_text() != local:
+        raise SystemExit("Existing local Synapse config differs; refusing to overwrite it")
+else:
+    with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as file:
+        file.write(local)
+    os.chown(target, 991, 991)
+PY
+
+mkdir -p data/element
+if [[ ! -f data/element/index.html ]]; then
+  [[ -f offline-bundle/static/element/index.html ]] || {
+    echo "Element assets missing; run the verified offline export before local setup." >&2
+    exit 1
+  }
+  cp -a offline-bundle/static/element/. data/element/
+fi
+chmod 755 data/element
+echo "Local assets and configuration are ready. Existing data and credentials were preserved."

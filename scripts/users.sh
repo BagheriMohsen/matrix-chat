@@ -7,8 +7,10 @@ if len(sys.argv) < 2 or sys.argv[1] not in {"create", "admin", "password", "deac
 action = sys.argv[1]
 if action in {"create", "admin"}:
     if len(sys.argv) != 3: raise SystemExit("Provide one localpart.")
-    subprocess.run(["docker", "compose", "exec", "synapse", "register_new_matrix_user", "-c", "/data/homeserver.yaml", "http://localhost:8008"], check=True)
-    raise SystemExit("Answer the interactive prompts; choose admin only for the initial admin.")
+    command = ["docker", "compose", "exec", "synapse", "register_new_matrix_user", "-c", "/data/homeserver.yaml", "-u", sys.argv[2]]
+    command.append("-a" if action == "admin" else "--no-admin")
+    subprocess.run(command + ["http://localhost:8008"], check=True)
+    raise SystemExit("Answer the password prompts.")
 if action == "list":
     endpoint, method, body = "/_synapse/admin/v2/users?limit=100", "GET", None
 else:

@@ -3,7 +3,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [[ -f .env ]] || { echo "Copy .env.example to .env and set a random POSTGRES_PASSWORD." >&2; exit 1; }
-[[ ! -e data/synapse/homeserver.yaml && ! -e data/postgres/PG_VERSION ]] || { echo "Existing deployment data found; refusing to overwrite it." >&2; exit 1; }
+if [[ -d data/synapse ]]; then
+  if docker run --rm --pull never -v "$PWD/data/synapse:/data:ro" --entrypoint sh \
+    matrixdotorg/synapse:v1.161.0 -c 'test -f /data/homeserver.yaml && test -f /data/ct.koten.ir.signing.key && test -f /data/registration_shared_secret'; then
+    echo "Synapse is already initialized; preserving its configuration and keys."
+    exit 0
+  fi
+  echo "Incomplete Synapse data found; refusing to overwrite it." >&2
+  exit 1
+fi
+[[ ! -d data/postgres ]] || { echo "Existing database data found; refusing to overwrite it." >&2; exit 1; }
 set -a
 source .env
 set +a

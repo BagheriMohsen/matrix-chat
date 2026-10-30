@@ -1,9 +1,54 @@
 # Private Matrix stack
 
-This is a deployment template for `ct.koten.ir`, not a deployment tool. It runs
-exactly three persistent containers: Nginx, Synapse, and PostgreSQL. It has no
+The production configuration is a deployment template for `ct.koten.ir`, not a
+deployment tool. It runs exactly three persistent containers: Nginx, Synapse,
+and PostgreSQL. It has no
 federation listener, federation is denied by Synapse, public registration and
 guests are disabled, and the public proxy returns 404 for the Admin API.
+
+## Local development
+
+The local Compose file reuses the production PostgreSQL and Synapse services,
+adds a localhost-only Nginx site and a pinned Synapse Admin UI. Keep only one
+stack running at a time because both use the same persistent data. From the
+repository root, with Docker running and the existing verified Element assets
+in `offline-bundle/static/element/`, start it with:
+
+```sh
+bash scripts/local-init.sh
+docker compose -p matrix_local -f compose.local.yaml up -d
+python3 scripts/local-admin.py
+```
+
+`local-init.sh` creates `.env` with a random database password when absent,
+initializes Synapse once, and creates a local client URL configuration while
+keeping the server identity `ct.koten.ir` and existing signing key. Repeat it
+safely; it refuses incomplete data or changed local configuration. On a fresh
+machine, pull the pinned images in `compose.local.yaml` and prepare the verified
+Element assets with `scripts/offline-export.sh` first. Once images are cached,
+start or restart without network access using
+`docker compose -p matrix_local -f compose.local.yaml up -d --pull never`.
+
+- Element Web: <http://localhost:8080>
+- Synapse Admin: <http://localhost:8081>
+
+`local-admin.py` creates `@admin:ct.koten.ir` through Synapse's shared-secret
+registration API and verifies login and Admin API access. It keeps the random
+password in ignored `secrets/local-admin-password` (mode 600); read that file
+locally to sign in. Running it again verifies the existing account and does not
+change its password. To create another user interactively, run
+`COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/users.sh create alice`.
+For a separate administrator, use `scripts/users.sh admin LOCALPART` with the
+same two environment variables. To inspect media, run
+`COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/media.sh usage`
+or the `list-user` and `info` commands below.
+
+Shut down local services without removing data with
+`docker compose -p matrix_local -f compose.local.yaml stop`. Restart them with
+the `up -d --pull never` command above. To return to the unchanged production
+stack, stop the local services, provide the production TLS files, and run
+`docker compose up -d` using `compose.yaml`. Production does not include the
+Admin UI or localhost ports. Neither local URL requires public DNS or TLS.
 
 ## Prepare while online
 
