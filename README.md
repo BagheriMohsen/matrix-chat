@@ -69,6 +69,51 @@ tokens and devices. There is no reliable remote deletion of already-decrypted
 content. Use `scripts/backup.sh`, encrypt its output before transfer, and read
 `scripts/restore.sh` before an explicitly chosen recovery-environment restore.
 
+## Manual media maintenance
+
+Synapse stores local uploads and thumbnails under persistent
+`data/synapse/media_store/`; PostgreSQL uses persistent `data/postgres/`.
+Synapse and Nginx both cap each upload at 20 MiB, and all three containers
+have bounded Docker log rotation. No automatic local media retention is enabled.
+Synapse's [media retention setting](https://element-hq.github.io/synapse/v1.161/usage/configuration/config_documentation.html#media_retention)
+can be configured later, but it purges by last access, not by whether a message
+still references a file. Leave it unset unless that loss is acceptable.
+
+Run from the deployment directory with Docker access:
+
+```sh
+scripts/media.sh usage
+scripts/media.sh list-user '@alice:ct.koten.ir'
+scripts/media.sh info 'mxc://ct.koten.ir/MEDIA_ID'
+scripts/media.sh delete 'mxc://ct.koten.ir/MEDIA_ID'
+scripts/media.sh delete 'mxc://ct.koten.ir/MEDIA_ID' --execute
+scripts/media.sh purge-before 2025-01-01
+scripts/media.sh purge-before 2025-01-01 --execute
+```
+
+`usage` reports media-store allocated KiB and host filesystem free space.
+`list-user` shows the first 100 uploads and a `next_token` when more exist;
+use the [Synapse user media API](https://element-hq.github.io/synapse/v1.161/admin_api/user_admin_api.html#list-media-uploaded-by-a-user)
+for further pages. `info` and `delete` without `--execute` inspect one exact
+local MXC. Destructive commands require `--execute` and typing the target or
+cutoff. Bulk purge refuses cutoffs less than 90 days old, keeps profile media,
+and has no exact dry-run candidate list. Review a backup and the affected users
+before running it. The [Synapse media Admin API](https://element-hq.github.io/synapse/v1.161/admin_api/media_admin_api.html#delete-local-media)
+removes media originals and thumbnails from local storage; check `usage` before
+and after. Filesystem free-space changes may differ because PostgreSQL, Docker,
+and filesystem metadata also consume blocks. Existing backup archives may
+still contain copies of deleted media and occupy space independently.
+
+Message redaction removes event content from the room view; it does not prove
+that an uploaded media file was deleted. Deleting media through the Admin API
+removes the stored file, so any surviving message link can break. Synapse cannot
+reliably identify all unreferenced uploads: its room media listing covers only
+unencrypted events, and encrypted attachment references are inside encrypted
+events ([Matrix encrypted file format](https://spec.matrix.org/v1.16/client-server-api/#sending-encrypted-attachments)).
+Never use an age-based purge as reference-safe cleanup. These media
+commands do not touch the database files, signing key, Synapse configuration,
+or encryption metadata.
+
 ## Privacy and client expectations
 
 Element Web defaults to this homeserver and private room creation. Create
@@ -91,6 +136,15 @@ Synapse → configured push gateway → APNs/FCM → operating system; no push g
 is deployed here, and self-hosting one would not eliminate APNs/FCM. iOS cannot
 reliably maintain an unrestricted background connection. Android alternatives
 include compatible clients using a background connection or UnifiedPush.
+
+Before deployment, manually verify on real devices and a browser: Element Web
+login; Element X Android and iOS password login; device verification; encrypted
+direct messages and group rooms; encrypted file upload and retrieval; recovery
+key setup and recovery on a second device; foreground delivery; reconnect and
+sync after network loss; and expected background notification limits without a
+push gateway. Synapse 1.161 includes native simplified sliding sync and password
+login for Element X, but API availability alone does not verify E2EE or mobile
+behavior.
 
 ## Verification and acceptance
 
