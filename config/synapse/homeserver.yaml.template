@@ -31,6 +31,7 @@ registration_shared_secret_path: /data/registration_shared_secret
 # Empty is Synapse's documented federation-off setting.
 federation_domain_whitelist: []
 federation_whitelist_endpoint_enabled: false
+send_federation: false
 
 enable_media_repo: true
 media_store_path: /data/media_store

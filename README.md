@@ -21,20 +21,33 @@ and run `docker compose exec nginx nginx -s reload`. No self-signed fallback is
 provided. During an outage, expiry, DNS resolution, and client certificate
 validation can still prevent new connections.
 
-Before leaving online connectivity, independently obtain the official release
-hash for Element Web v1.12.33 and run:
+The [Element Web v1.12.33 release metadata](https://api.github.com/repos/element-hq/element-web/releases/tags/v1.12.33)
+publishes SHA-256 `04e180516430381d5f5e528ea345a435784bba26f76a84f106a623febd3fcd67`
+for `element-v1.12.33.tar.gz`. Recheck the upstream digest before exporting:
 
 ```sh
-ELEMENT_SHA256='<verified 64-hex SHA-256>' scripts/offline-export.sh
+ELEMENT_SHA256=04e180516430381d5f5e528ea345a435784bba26f76a84f106a623febd3fcd67 scripts/offline-export.sh
 ```
 
 It pulls AMD64 images, verifies the Element archive hash, injects the local
-Element config, exports the three images, and writes checksums. Copy only the
-resulting `offline-bundle/`; copy `static/element/` to `data/element/` on the
-target. It deliberately excludes database data, `.env`,
-signing keys, secrets, and certificates. Offline restoration starts with
-`sha256sum -c SHA256SUMS` and `docker load -i images/runtime-images.tar`.
-Then copy protected secrets separately and run `docker compose up -d`; no image
+Element config, exports the three images, and writes checksums for every bundle
+file. Copy only the resulting `offline-bundle/`. On the target, verify the
+bundle, load images, then extract `config-templates.tgz` into the deployment
+directory alongside `compose.yaml` and `.env.example`:
+
+```sh
+cd offline-bundle && sha256sum -c SHA256SUMS
+docker load -i images/runtime-images.tar
+mkdir -p ../matrix-chat && cd ../matrix-chat
+cp ../offline-bundle/compose.yaml ../offline-bundle/.env.example .
+tar -xzf ../offline-bundle/config-templates.tgz
+```
+
+Create a protected `.env`, run `scripts/init.sh` with the loaded Synapse image,
+then copy the static files with `cp -a ../offline-bundle/static/element/. data/element/`.
+Restore protected TLS material separately before starting the stack. The bundle
+excludes database data, `.env`, signing keys, secrets, and certificates. Run
+`docker compose up -d --pull never`; no image
 pull, package install, build, or external CDN is needed. Test this by blocking
 international egress while retaining the domestic route.
 
