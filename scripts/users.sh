@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Local-only user administration. Tokens and passwords travel via stdin, never argv."""
 import getpass, json, subprocess, sys
+from pathlib import Path
+
+config = Path(__file__).resolve().parent.parent / "data/synapse/homeserver.yaml"
+server_name = next((line.split('"', 2)[1] for line in config.read_text().splitlines() if line.startswith('server_name: "')), None)
+if not server_name:
+    raise SystemExit("Cannot determine MATRIX_SERVER_NAME; initialize Synapse first.")
 
 if len(sys.argv) < 2 or sys.argv[1] not in {"create", "admin", "password", "deactivate", "list"}:
     raise SystemExit("Usage: users.sh {create|admin|password|deactivate|list} [localpart]")
@@ -15,7 +21,7 @@ if action == "list":
     endpoint, method, body = "/_synapse/admin/v2/users?limit=100", "GET", None
 else:
     if len(sys.argv) != 3: raise SystemExit("Provide one localpart.")
-    user = "@" + sys.argv[2] + ":ct.koten.ir"
+    user = "@" + sys.argv[2] + ":" + server_name
     if action == "password":
         password = getpass.getpass("New password: ")
         if password != getpass.getpass("Confirm password: "): raise SystemExit("Passwords differ.")

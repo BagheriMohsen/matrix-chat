@@ -12,12 +12,15 @@ cmp -s .env "$stage/.env" || { echo "Target .env differs from backup; select a m
 [[ -f secrets/tls/fullchain.pem && -f secrets/tls/privkey.pem && -f data/element/index.html ]] || { echo "Restore protected TLS material and Element assets in this recovery environment first." >&2; exit 1; }
 read -r -p "Restore $dir into this deployment (current data is moved aside)? Type RESTORE: " answer
 [[ $answer == RESTORE ]] || { echo "Cancelled."; exit 1; }
-source .env
+POSTGRES_DB=$(python3 scripts/render-config.py --get POSTGRES_DB)
+POSTGRES_USER=$(python3 scripts/render-config.py --get POSTGRES_USER)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 docker compose down
 [[ ! -e data ]] || mv data "data.pre-restore.$stamp"
 mkdir -p data/synapse data/postgres
 tar -xzf "$dir/synapse-files.tgz" -C data/synapse
+[[ ! -d "data.pre-restore.$stamp/element" ]] || mv "data.pre-restore.$stamp/element" data/element
+python3 scripts/render-config.py
 docker compose up -d postgres
 until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null; do sleep 2; done
 docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < "$dir/synapse.pg.dump"

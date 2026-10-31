@@ -1,13 +1,13 @@
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "http://localhost:8080",
-      "server_name": "ct.koten.ir"
+      "base_url": "__LOCAL_ELEMENT_URL__",
+      "server_name": "__MATRIX_SERVER_NAME__"
     }
   },
   "disable_custom_urls": true,
   "disable_guests": true,
-  "brand": "Koten Chat Local",
+  "brand": "Private Matrix Local",
   "default_federate": false,
   "show_labs_settings": false
 }

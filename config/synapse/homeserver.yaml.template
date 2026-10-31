@@ -1,6 +1,6 @@
-server_name: "ct.koten.ir"
+server_name: __MATRIX_SERVER_NAME_JSON__
 pid_file: /data/homeserver.pid
-public_baseurl: "https://ct.koten.ir/"
+public_baseurl: __PUBLIC_BASE_URL_SLASH_JSON__
 report_stats: false
 
 listeners:
@@ -15,9 +15,9 @@ listeners:
 database:
   name: psycopg2
   args:
-    user: "__POSTGRES_USER__"
-    password: "__POSTGRES_PASSWORD__"
-    database: "__POSTGRES_DB__"
+    user: __POSTGRES_USER__
+    password: __POSTGRES_PASSWORD__
+    database: __POSTGRES_DB__
     host: postgres
     port: 5432
     cp_min: 1
@@ -35,12 +35,12 @@ send_federation: false
 
 enable_media_repo: true
 media_store_path: /data/media_store
-max_upload_size: 20M
+max_upload_size: __MAX_UPLOAD_SIZE__
 media_upload_limits:
   - time_period: 24h
-    max_size: 100M
+    max_size: __MEDIA_UPLOAD_LIMIT_24H__
   - time_period: 7d
-    max_size: 500M
+    max_size: __MEDIA_UPLOAD_LIMIT_7D__
 url_preview_enabled: false
 default_identity_server: null
 allow_public_rooms_without_auth: false
@@ -59,6 +59,6 @@ rc_login:
   account: {per_second: 0.2, burst_count: 3}
   failed_attempts: {per_second: 0.2, burst_count: 3}
 
-signing_key_path: "/data/ct.koten.ir.signing.key"
+signing_key_path: __SIGNING_KEY_PATH_JSON__
 trusted_key_servers: []
-log_config: "/data/ct.koten.ir.log.config"
+log_config: __LOG_CONFIG_PATH_JSON__

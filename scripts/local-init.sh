@@ -23,25 +23,30 @@ with os.fdopen(os.open(".env", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w"
 PY
 fi
 [[ -f .env ]] || { echo ".env is missing." >&2; exit 1; }
+python3 scripts/render-config.py
 if grep -q '^POSTGRES_PASSWORD=replace-with-a-long-random-password$' .env; then
   echo "Replace the example database password before continuing." >&2
   exit 1
 fi
+PUBLIC_BASE_URL=$(python3 scripts/render-config.py --get PUBLIC_BASE_URL)
+LOCAL_HOST=$(python3 scripts/render-config.py --get LOCAL_HOST)
+LOCAL_ELEMENT_PORT=$(python3 scripts/render-config.py --get LOCAL_ELEMENT_PORT)
 
 scripts/init.sh
 
 # The local config changes only the client-facing URL; the Matrix identity and
 # signing key stay in the existing production configuration and data directory.
 docker run --rm --pull never -i -v "$PWD/data/synapse:/data" \
+  -e PUBLIC_BASE_URL="$PUBLIC_BASE_URL" -e LOCAL_HOST="$LOCAL_HOST" -e LOCAL_ELEMENT_PORT="$LOCAL_ELEMENT_PORT" \
   --entrypoint python3 matrixdotorg/synapse:v1.161.0 - <<'PY'
 from pathlib import Path
 import os
 
 original = Path("/data/homeserver.yaml").read_text()
-old = 'public_baseurl: "https://ct.koten.ir/"'
+old = f'public_baseurl: "{os.environ["PUBLIC_BASE_URL"].rstrip("/")}/"'
 if original.count(old) != 1:
     raise SystemExit("Expected production public_baseurl was not found; preserving existing configuration")
-local = original.replace(old, 'public_baseurl: "http://localhost:8080/"', 1)
+local = original.replace(old, f'public_baseurl: "http://{os.environ["LOCAL_HOST"]}:{os.environ["LOCAL_ELEMENT_PORT"]}/"', 1)
 target = Path("/data/homeserver.local.yaml")
 if target.exists():
     if target.read_text() != local:
@@ -51,6 +56,8 @@ else:
         file.write(local)
     os.chown(target, 991, 991)
 PY
+
+python3 scripts/render-config.py
 
 mkdir -p data/element
 if [[ ! -f data/element/index.html ]]; then

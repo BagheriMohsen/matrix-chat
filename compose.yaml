@@ -52,13 +52,13 @@ services:
     ports: ["80:80", "443:443"]
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./config/nginx/site.conf:/etc/nginx/conf.d/site.conf:ro
+      - ./data/nginx/site.conf:/etc/nginx/conf.d/site.conf:ro
       - ./data/element:/usr/share/nginx/html:ro
       - ./data/acme:/var/www/acme:ro
       - ./secrets/tls:/etc/nginx/tls:ro
     networks: [frontend, backend]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ct.koten.ir' http://127.0.0.1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ${MATRIX_SERVER_NAME}' http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

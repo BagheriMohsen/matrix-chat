@@ -1,13 +1,13 @@
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "https://ct.koten.ir",
-      "server_name": "ct.koten.ir"
+      "base_url": "__PUBLIC_BASE_URL__",
+      "server_name": "__MATRIX_SERVER_NAME__"
     }
   },
   "disable_custom_urls": true,
   "disable_guests": true,
-  "brand": "Koten Chat",
+  "brand": "Private Matrix",
   "default_federate": false,
   "show_labs_settings": false
 }

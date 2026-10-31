@@ -12,7 +12,11 @@ from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SERVER = "ct.koten.ir"
+CONFIG = ROOT / "data/synapse/homeserver.yaml"
+match = re.search(r'^server_name: "([^"]+)"$', CONFIG.read_text(), re.MULTILINE) if CONFIG.is_file() else None
+if not match:
+    raise SystemExit("Cannot determine MATRIX_SERVER_NAME; initialize Synapse first.")
+SERVER = match.group(1)
 REMOTE = r'''import json, sys, urllib.error, urllib.request
 token = sys.stdin.readline().rstrip("\n")
 method, path = sys.argv[1:]
@@ -52,9 +56,9 @@ def request(token, method, path):
 
 
 def media_id(mxc):
-    match = re.fullmatch(r"mxc://ct\.koten\.ir/([A-Za-z0-9_-]+)", mxc)
+    match = re.fullmatch(r"mxc://" + re.escape(SERVER) + r"/([A-Za-z0-9_-]+)", mxc)
     if not match:
-        raise SystemExit("Provide one local mxc://ct.koten.ir/<media_id> URI.")
+        raise SystemExit(f"Provide one local mxc://{SERVER}/<media_id> URI.")
     return match.group(1)
 
 
@@ -69,7 +73,7 @@ def main():
         usage()
         return
     if len(args) not in (2, 3) or args[0] not in {"list-user", "info", "delete", "purge-before"}:
-        raise SystemExit("Usage: media.sh usage | list-user @user:ct.koten.ir | info MXC | delete MXC [--execute] | purge-before YYYY-MM-DD [--execute]")
+        raise SystemExit(f"Usage: media.sh usage | list-user @user:{SERVER} | info MXC | delete MXC [--execute] | purge-before YYYY-MM-DD [--execute]")
     action, target = args[:2]
     execute = len(args) == 3 and args[2] == "--execute"
     if len(args) == 3 and not execute:
@@ -78,7 +82,7 @@ def main():
         raise SystemExit("--execute is only valid for delete and purge-before.")
 
     if action == "list-user":
-        if not re.fullmatch(r"@[^:/]+:ct\.koten\.ir", target):
+        if not re.fullmatch(r"@[^:/]+:" + re.escape(SERVER), target):
             raise SystemExit("Provide a local Matrix user ID.")
         path = "/_synapse/admin/v1/users/" + quote(target, safe="") + "/media?limit=100"
     elif action in {"info", "delete"}:
