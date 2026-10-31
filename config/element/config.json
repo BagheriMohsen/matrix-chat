@@ -9,5 +9,11 @@
   "disable_guests": true,
   "brand": "Private Matrix",
   "default_federate": false,
-  "show_labs_settings": false
+  "show_labs_settings": false,
+  "element_call": {
+    "disable": true
+  },
+  "setting_defaults": {
+    "UIFeature.voip": false
+  }
 }

@@ -43,6 +43,30 @@ scripts/users.sh admin admin
 
 Element is at PUBLIC_BASE_URL. Production does not include Synapse Admin and returns 404 for /_synapse/admin/. The final command creates the first administrator from inside Synapse and prompts for its password.
 
+## Daily commands
+
+The Makefile defaults safely to production. Select local mode explicitly; it is
+never guessed from host state.
+
+~~~sh
+make up
+make status
+make logs
+make down
+
+make MODE=local up
+make MODE=local status
+make MODE=local logs
+make MODE=local down
+~~~
+
+`make up` initializes only when needed, never resets data, starts with already
+downloaded images, waits for health checks, and prints a dashboard. It shows the
+Element URL, Matrix API URL, and (in local mode) the Admin URL from the rendered
+configuration. A URL is marked available only after an HTTP check succeeds.
+`make down` uses `docker compose stop`, so it does not remove volumes or user
+data. `make help` lists these commands.
+
 ## Configuration
 
 Copy .env.example; it documents the small supported configuration surface.
@@ -58,6 +82,12 @@ Copy .env.example; it documents the small supported configuration surface.
 | ADMIN_PATH | / | Local Admin path: /, /panel, /admin, or /management. |
 
 Compose does not interpolate mounted files. scripts/init.sh renders fresh Synapse configuration; scripts/render-config.py renders Nginx, Element, and Admin files under ignored data/. It validates domains, URLs, ports, paths, database names, and sizes without printing secrets.
+
+At first initialization, PostgreSQL receives POSTGRES_DB, POSTGRES_USER, and
+POSTGRES_PASSWORD from `.env`; the same values are rendered into Synapse's
+database configuration. Changing POSTGRES_PASSWORD later does **not** rotate an
+existing PostgreSQL role or database. Treat a password rotation as a separate,
+planned database operation; do not change it in `.env` alone.
 
 After changing a proxy, Element, or local Admin setting:
 
@@ -99,6 +129,31 @@ scripts/restore.sh backups/TIMESTAMP
 ~~~
 
 Deletion requires confirmation and can break message links. Encrypt backups before transfer; restore moves existing data aside only after confirmation and belongs in a deliberate recovery environment.
+
+## Voice messages and calls
+
+Element Web 1.12.33 supports voice messages. Users can record from the composer,
+review/send, download, and play them as normal Matrix media; encrypted rooms and
+the existing upload limits apply. Microphone recording requires a secure browser
+context: HTTPS in production, or the browser's localhost exception for local
+development. Plain LAN HTTP is not a supported microphone-recording context.
+
+Reliable self-hosted calling is intentionally not enabled in this three-container
+stack. The Element configuration disables default Jitsi/Element Call entry points
+so it cannot silently use Element's public calling infrastructure. Private 1:1
+calls require a self-hosted coturn service and Synapse TURN credentials; group
+calls require a tested MatrixRTC backend (currently Element Call with LiveKit or
+an equivalent supported SFU). These add public UDP/TCP relay ports, NAT/public-IP
+configuration, TLS, a shared TURN secret, monitoring, and memory/CPU load. A
+2 GB server can run this messaging stack and a small coturn instance, but is not
+a realistic single-host target for reliable LiveKit group calls. Federation being
+disabled does not prevent local users from calling each other.
+
+Do not expose a call button until that optional calling deployment is provisioned
+and tested end-to-end. The minimal future plan is an explicit `calls` Compose
+profile containing hardened coturn for 1:1 calls; add MatrixRTC/LiveKit only on a
+separately sized host after validating its pinned versions, relay port range,
+TLS certificate, NAT mapping, and capacity.
 
 scripts/offline-export.sh exports pinned images, verified Element files, and templates. On the target, verify checksums, load images, copy Element into data/element/, then run initialization and docker compose up -d --pull never. It excludes .env, database data, keys, certificates, and media.
 

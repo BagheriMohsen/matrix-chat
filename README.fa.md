@@ -39,11 +39,40 @@ scripts/users.sh admin admin
 
 Element روی PUBLIC_BASE_URL است. Synapse Admin در تولید منتشر نمی‌شود و /_synapse/admin/ پاسخ 404 می‌دهد.
 
+## فرمان‌های روزمره
+
+Makefile به‌صورت امن حالت تولید را انتخاب می‌کند. حالت محلی باید صریح انتخاب
+شود و از وضعیت ماشین حدس زده نمی‌شود:
+
+~~~sh
+make up
+make status
+make logs
+make down
+
+make MODE=local up
+make MODE=local status
+make MODE=local logs
+make MODE=local down
+~~~
+
+`make up` فقط در صورت نیاز init می‌کند، داده را reset نمی‌کند، از imageهای
+دانلودشده استفاده می‌کند، منتظر health check می‌ماند و dashboard چاپ می‌کند.
+URLهای Element، Matrix API و در حالت محلی Admin از تنظیمات تولیدشده خوانده
+می‌شوند. یک URL فقط پس از بررسی موفق HTTP در دسترس علامت می‌خورد. `make down`
+فقط کانتینرها را stop می‌کند و volume یا دادهٔ کاربر را حذف نمی‌کند. `make help`
+فهرست فرمان‌ها را نشان می‌دهد.
+
 ## تنظیمات
 
 .env.example متغیرهای پشتیبانی‌شده را نشان می‌دهد: MATRIX_SERVER_NAME، PUBLIC_BASE_URL، متغیرهای PostgreSQL، MAX_UPLOAD_SIZE، MEDIA_UPLOAD_LIMIT_24H، MEDIA_UPLOAD_LIMIT_7D، LOCAL_HOST، LOCAL_ELEMENT_PORT، LOCAL_ADMIN_PORT و ADMIN_PATH.
 
 مقادیر پیش‌فرض upload به‌ترتیب 20M، 100M و 500M هستند. ADMIN_PATH به‌طور پیش‌فرض / است و مسیرهایی مانند /panel، /admin یا /management معتبرند. Compose متغیرها را در فایل‌های mount‌شده جای‌گذاری نمی‌کند؛ scripts/init.sh و scripts/render-config.py فایل‌های تولیدشده را در data/ می‌سازند و دامنه، URL، پورت، مسیر، نام دیتابیس و اندازه‌ها را اعتبارسنجی می‌کنند.
+
+در اولین init، PostgreSQL مقادیر POSTGRES_DB، POSTGRES_USER و
+POSTGRES_PASSWORD را از `.env` می‌گیرد و همان مقادیر در تنظیمات دیتابیس Synapse
+تولید می‌شوند. تغییر POSTGRES_PASSWORD پس از ایجاد دیتابیس، نقش PostgreSQL را
+خودکار تغییر نمی‌دهد؛ چرخش گذرواژه یک عملیات جداگانه و برنامه‌ریزی‌شده است.
 
 پس از تغییر تنظیمات Nginx، Element یا مسیر پنل:
 
@@ -85,6 +114,29 @@ scripts/restore.sh backups/TIMESTAMP
 ~~~
 
 حذف رسانه تأیید می‌خواهد و ممکن است پیوند پیام را خراب کند. archive پشتیبان را پیش از انتقال رمزگذاری کنید. بازیابی تنها پس از تأیید، دادهٔ فعلی را کنار می‌گذارد.
+
+## پیام صوتی و تماس
+
+Element Web 1.12.33 از پیام صوتی پشتیبانی می‌کند: کاربر از composer ضبط، بازبینی
+و ارسال می‌کند و مانند رسانهٔ عادی آن را دانلود یا پخش می‌کند. اتاق‌های رمزگذاری‌شده
+و محدودیت‌های فعلی upload حفظ می‌شوند. ضبط میکروفون به secure context نیاز دارد:
+HTTPS در تولید یا استثنای localhost مرورگر در محیط محلی. HTTP روی LAN برای ضبط
+میکروفون پشتیبانی‌شده نیست.
+
+تماس self-hosted قابل‌اعتماد عمداً در این استک سه‌کانتینری فعال نشده است. تنظیمات
+Element نقطه‌های ورود پیش‌فرض Jitsi و Element Call را غیرفعال می‌کند تا سرویس
+عمومی Element ناخواسته استفاده نشود. تماس خصوصی یک‌به‌یک به coturn self-hosted و
+TURN credential در Synapse نیاز دارد؛ تماس گروهی به MatrixRTC آزمایش‌شده نیاز دارد
+(فعلاً Element Call با LiveKit یا SFU سازگار). این‌ها به پورت‌های relay عمومی
+UDP/TCP، NAT/public IP، TLS، TURN secret، monitoring و CPU/RAM بیشتر نیاز دارند.
+سرور 2 GB برای این پیام‌رسان و coturn کوچک مناسب است، اما برای LiveKit گروهی
+قابل‌اعتماد روی همان میزبان واقع‌بینانه نیست. غیرفعال بودن federation مانع تماس
+کاربران محلی نمی‌شود.
+
+پیش از ایجاد و آزمون کامل این استک اختیاری، دکمهٔ تماس را فعال نکنید. برنامهٔ
+حداقلی آینده یک profile صریح calls با coturn سخت‌سازی‌شده برای 1:1 است؛ MatrixRTC/
+LiveKit فقط پس از بررسی نسخه‌ها، relay port range، TLS، NAT و ظرفیت روی میزبان
+مناسب افزوده شود.
 
 scripts/offline-export.sh imageهای پین‌شده، Element بررسی‌شده و قالب‌ها را صادر می‌کند. در مقصد checksumها را بررسی، imageها را load، Element را در data/element/ کپی و سپس init و docker compose up -d --pull never را اجرا کنید. bundle شامل .env، دادهٔ دیتابیس، کلیدها، گواهی یا رسانه نیست.
 
