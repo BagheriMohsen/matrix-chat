@@ -60,7 +60,10 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     depends_on:
-      synapse: {condition: service_healthy}
+      synapse:
+        condition: service_healthy
+      synapse-admin:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"
