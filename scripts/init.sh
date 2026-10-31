@@ -12,6 +12,10 @@ if [[ -d data/synapse ]]; then
     matrixdotorg/synapse:v1.161.0 -c 'test -f /data/homeserver.yaml && test -f /data/registration_shared_secret && find /data -maxdepth 1 -name "*.signing.key" -type f -print -quit | grep -q .'; then
     current_server=$(sed -nE 's/^server_name: "([^"]+)"$/\1/p' data/synapse/homeserver.yaml)
     [[ $current_server == "$MATRIX_SERVER_NAME" ]] || { echo "MATRIX_SERVER_NAME cannot change after initialization." >&2; exit 1; }
+    docker run --rm --user 0:0 -v "$PWD:/project" -w /project --entrypoint python3 \
+      matrixdotorg/synapse:v1.161.0 scripts/render-config.py --turn-synapse
+    docker run --rm -v "$PWD/data/synapse:/data" --entrypoint chown \
+      matrixdotorg/synapse:v1.161.0 991:991 /data/homeserver.yaml
     echo "Synapse is already initialized; preserving its configuration and keys."
     exit 0
   fi

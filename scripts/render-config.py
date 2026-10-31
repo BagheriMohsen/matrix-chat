@@ -2,6 +2,7 @@
 """Render deployment-specific configuration from the small .env contract."""
 
 import json
+import ipaddress
 import re
 import sys
 from pathlib import Path
@@ -76,7 +77,56 @@ def validate(values):
     path = required(values, "ADMIN_PATH")
     if not ADMIN_PATH.fullmatch(path):
         fail("ADMIN_PATH must be / or an absolute path without a trailing slash")
-    return server_name, public_url.rstrip("/"), host, path
+    turn_enabled = values.get("TURN_ENABLED", "0")
+    if turn_enabled not in {"0", "1"}:
+        fail("TURN_ENABLED must be 0 or 1")
+    turn = {"enabled": turn_enabled == "1"}
+    if turn["enabled"]:
+        turn_host = required(values, "TURN_HOST")
+        if not DOMAIN.fullmatch(turn_host) or turn_host != server_name:
+            fail("TURN_HOST must equal MATRIX_SERVER_NAME so the existing TLS certificate is valid")
+        try:
+            external_ip = ipaddress.ip_address(required(values, "TURN_EXTERNAL_IP"))
+        except ValueError:
+            fail("TURN_EXTERNAL_IP must be a public IPv4 address")
+        if external_ip.version != 4 or not external_ip.is_global:
+            fail("TURN_EXTERNAL_IP must be a public IPv4 address")
+        ports = {}
+        for key in ("TURN_PORT", "TURN_TLS_PORT", "TURN_MIN_PORT", "TURN_MAX_PORT"):
+            try:
+                ports[key] = int(required(values, key))
+            except ValueError:
+                fail(f"{key} must be a port number")
+            if not 1024 <= ports[key] <= 65535:
+                fail(f"{key} must be between 1024 and 65535")
+        if ports["TURN_PORT"] == ports["TURN_TLS_PORT"]:
+            fail("TURN_PORT and TURN_TLS_PORT must differ")
+        if ports["TURN_MIN_PORT"] > ports["TURN_MAX_PORT"]:
+            fail("TURN_MIN_PORT must not exceed TURN_MAX_PORT")
+        if ports["TURN_MIN_PORT"] <= ports["TURN_PORT"] <= ports["TURN_MAX_PORT"] or ports["TURN_MIN_PORT"] <= ports["TURN_TLS_PORT"] <= ports["TURN_MAX_PORT"]:
+            fail("TURN relay range must not contain TURN_PORT or TURN_TLS_PORT")
+        secret = required(values, "TURN_SHARED_SECRET")
+        if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", secret):
+            fail("TURN_SHARED_SECRET must be at least 32 safe characters")
+        turn.update({"host": turn_host, "external_ip": str(external_ip), "secret": secret, **ports})
+    return server_name, public_url.rstrip("/"), host, path, turn
+
+
+def turn_synapse_config(turn):
+    if not turn["enabled"]:
+        return ""
+    host = turn["host"]
+    return (
+        "# BEGIN managed TURN configuration\n"
+        "turn_uris:\n"
+        f"  - turn:{host}:{turn['TURN_PORT']}?transport=udp\n"
+        f"  - turn:{host}:{turn['TURN_PORT']}?transport=tcp\n"
+        f"  - turns:{host}:{turn['TURN_TLS_PORT']}?transport=tcp\n"
+        f"turn_shared_secret: {json.dumps(turn['secret'])}\n"
+        "turn_user_lifetime: 1h\n"
+        "turn_allow_guests: false\n"
+        "# END managed TURN configuration\n"
+    )
 
 
 def nginx_size(size):
@@ -95,14 +145,14 @@ def write_template(source, destination, replacements):
 
 def main():
     values = read_env()
-    server_name, public_url, host, admin_path = validate(values)
+    server_name, public_url, host, admin_path, turn = validate(values)
     arguments = sys.argv[1:]
     if arguments:
         if len(arguments) == 2 and arguments[0] == "--get" and arguments[1] in values:
             print(values[arguments[1]])
             return
-        if arguments != ["--homeserver"]:
-            raise SystemExit("Usage: render-config.py [--homeserver] | --get VARIABLE")
+        if arguments not in (["--homeserver"], ["--turn-synapse"]):
+            raise SystemExit("Usage: render-config.py [--homeserver|--turn-synapse] | --get VARIABLE")
     local_element_url = f"http://{host}:{values['LOCAL_ELEMENT_PORT']}"
     local_admin_url = f"http://{host}:{values['LOCAL_ADMIN_PORT']}"
     if admin_path == "/":
@@ -127,12 +177,46 @@ def main():
         "LOCAL_ADMIN_URL": local_admin_url,
         "MAX_UPLOAD_SIZE_NGINX": nginx_size(values["MAX_UPLOAD_SIZE"]),
         "ADMIN_UI_LOCATION": admin_location,
+        "VOIP_UI_ENABLED": "true" if turn["enabled"] else "false",
     }
     write_template("config/nginx/site.conf", ROOT / "data/nginx/site.conf", common)
     write_template("config/nginx/site.local.conf", ROOT / "data/nginx/site.local.conf", common)
     write_template("config/element/config.json", ROOT / "data/element/config.json", common)
     write_template("config/element/config.local.json", ROOT / "data/element/config.local.json", common)
     write_template("config/admin/config.local.json", ROOT / "data/admin/config.json", common)
+    if turn["enabled"]:
+        turn_destination = ROOT / "data/coturn/turnserver.conf"
+        write_template("config/coturn/turnserver.conf.template", turn_destination, {
+            "TURN_HOST": turn["host"],
+            "TURN_PORT": str(turn["TURN_PORT"]),
+            "TURN_TLS_PORT": str(turn["TURN_TLS_PORT"]),
+            "TURN_EXTERNAL_IP": turn["external_ip"],
+            "TURN_MIN_PORT": str(turn["TURN_MIN_PORT"]),
+            "TURN_MAX_PORT": str(turn["TURN_MAX_PORT"]),
+            "TURN_SHARED_SECRET": turn["secret"],
+        })
+        turn_destination.parent.chmod(0o700)
+        turn_destination.chmod(0o600)
+
+    if arguments == ["--turn-synapse"]:
+        homeserver = ROOT / "data/synapse/homeserver.yaml"
+        if not homeserver.is_file():
+            fail("initialize Synapse before updating TURN configuration")
+        content = homeserver.read_text()
+        content = re.sub(
+            r"(?ms)^# BEGIN managed TURN configuration\n.*?^# END managed TURN configuration\n?",
+            "",
+            content,
+        )
+        managed_turn = turn_synapse_config(turn)
+        if managed_turn:
+            anchor = re.search(r"(?m)^signing_key_path:", content)
+            if not anchor:
+                fail("could not find signing_key_path in homeserver.yaml")
+            content = content[:anchor.start()] + managed_turn + content[anchor.start():]
+        homeserver.write_text(content)
+        homeserver.chmod(0o600)
+        return
 
     if arguments == ["--homeserver"]:
         synapse = dict(common)
@@ -147,6 +231,7 @@ def main():
             "MEDIA_UPLOAD_LIMIT_7D": values["MEDIA_UPLOAD_LIMIT_7D"],
             "SIGNING_KEY_PATH_JSON": json.dumps(f"/data/{server_name}.signing.key"),
             "LOG_CONFIG_PATH_JSON": json.dumps(f"/data/{server_name}.log.config"),
+            "TURN_CONFIG": turn_synapse_config(turn),
         })
         write_template("config/synapse/homeserver.yaml.template", ROOT / "data/synapse/homeserver.yaml", synapse)
 

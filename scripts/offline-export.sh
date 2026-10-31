@@ -7,6 +7,11 @@ cd "$(dirname "$0")/.."
 python3 scripts/render-config.py
 mkdir -p offline-bundle/images offline-bundle/static/element
 images=(postgres:17.11-alpine3.24 matrixdotorg/synapse:v1.161.0 nginx:1.30.6-alpine3.24-slim)
+case ${INCLUDE_CALLS:-0} in
+  0) ;;
+  1) images+=(coturn/coturn:4.6.3-r3) ;;
+  *) echo "INCLUDE_CALLS must be 0 or 1." >&2; exit 1 ;;
+esac
 for image in "${images[@]}"; do
   docker pull --platform linux/amd64 "$image"
   [[ $(docker image inspect "$image" --format '{{.Architecture}}') == amd64 ]] || { echo "$image is not AMD64" >&2; exit 1; }

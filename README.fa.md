@@ -69,6 +69,11 @@ URLهای Element، Matrix API و در حالت محلی Admin از تنظیما
 
 مقادیر پیش‌فرض upload به‌ترتیب 20M، 100M و 500M هستند. ADMIN_PATH به‌طور پیش‌فرض / است و مسیرهایی مانند /panel، /admin یا /management معتبرند. Compose متغیرها را در فایل‌های mount‌شده جای‌گذاری نمی‌کند؛ scripts/init.sh و scripts/render-config.py فایل‌های تولیدشده را در data/ می‌سازند و دامنه، URL، پورت، مسیر، نام دیتابیس و اندازه‌ها را اعتبارسنجی می‌کنند.
 
+متغیرهای TURN_ENABLED، TURN_HOST، TURN_EXTERNAL_IP، TURN_PORT، TURN_TLS_PORT،
+TURN_MIN_PORT، TURN_MAX_PORT و TURN_SHARED_SECRET برای تماس اختیاری هستند.
+پیش‌فرض TURN_ENABLED=0 است؛ TURN_HOST باید همان MATRIX_SERVER_NAME و
+TURN_EXTERNAL_IP باید IPv4 عمومی سرور باشد.
+
 در اولین init، PostgreSQL مقادیر POSTGRES_DB، POSTGRES_USER و
 POSTGRES_PASSWORD را از `.env` می‌گیرد و همان مقادیر در تنظیمات دیتابیس Synapse
 تولید می‌شوند. تغییر POSTGRES_PASSWORD پس از ایجاد دیتابیس، نقش PostgreSQL را
@@ -133,10 +138,34 @@ UDP/TCP، NAT/public IP، TLS، TURN secret، monitoring و CPU/RAM بیشتر �
 قابل‌اعتماد روی همان میزبان واقع‌بینانه نیست. غیرفعال بودن federation مانع تماس
 کاربران محلی نمی‌شود.
 
-پیش از ایجاد و آزمون کامل این استک اختیاری، دکمهٔ تماس را فعال نکنید. برنامهٔ
-حداقلی آینده یک profile صریح calls با coturn سخت‌سازی‌شده برای 1:1 است؛ MatrixRTC/
-LiveKit فقط پس از بررسی نسخه‌ها، relay port range، TLS، NAT و ظرفیت روی میزبان
-مناسب افزوده شود.
+تماس گروهی خارج از scope است: coturn فقط تماس legacy یک‌به‌یک را فعال می‌کند و
+MatrixRTC/LiveKit به استک جداگانه، ظرفیت و آزمون کامل نیاز دارد.
+
+### تماس یک‌به‌یک اختیاری
+
+TURN_HOST را دامنهٔ Matrix، TURN_EXTERNAL_IP را IPv4 عمومی، TURN_ENABLED را 1 و
+TURN_SHARED_SECRET را راز قوی تنظیم کنید. راز را بدون چاپ یا commit بسازید:
+
+~~~sh
+openssl rand -base64 48 | tr -d '\n'
+make up CALLS=1
+~~~
+
+در firewall سرور و provider، TURN_PORT (3478) را برای UDP/TCP، TURN_TLS_PORT
+(5349) را برای TCP و کل بازهٔ UDP از TURN_MIN_PORT تا TURN_MAX_PORT باز کنید. پشت
+NAT همین پورت‌ها را forward و TURN_EXTERNAL_IP را آدرس عمومی قرار دهید. TURNS از
+گواهی موجود استفاده می‌کند، پس TURN_HOST باید MATRIX_SERVER_NAME باشد. TURN روی
+UDP TLS نیست، هرچند رسانهٔ WebRTC از DTLS-SRTP استفاده می‌کند.
+
+coturn از credential زمان‌دار Synapse استفاده می‌کند؛ CLI و anonymous access
+غیرفعال، مقصدهای private/multicast مسدود و TCP relay غیرفعال است. محدودیت Compose
+آن 128 MiB و 0.5 CPU است، اما پهنای‌باند با تماس‌های relay شده رشد می‌کند.
+`make down` آن را نیز stop می‌کند.
+
+برای آزمون، دو Element Web احراز هویت‌شده را در دو شبکهٔ متفاوت وارد کنید، تماس
+صوتی و سپس ویدیویی برقرار و دوطرفه بودن را بررسی کنید. در WebRTC diagnostics
+مرورگر candidate نوع relay را ببینید و روی شبکهٔ محدودکننده تکرار کنید. سالم بودن
+کانتینر به‌تنهایی موفقیت تماس نیست.
 
 scripts/offline-export.sh imageهای پین‌شده، Element بررسی‌شده و قالب‌ها را صادر می‌کند. در مقصد checksumها را بررسی، imageها را load، Element را در data/element/ کپی و سپس init و docker compose up -d --pull never را اجرا کنید. bundle شامل .env، دادهٔ دیتابیس، کلیدها، گواهی یا رسانه نیست.
 

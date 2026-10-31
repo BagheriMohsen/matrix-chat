@@ -41,6 +41,7 @@ media_upload_limits:
     max_size: __MEDIA_UPLOAD_LIMIT_24H__
   - time_period: 7d
     max_size: __MEDIA_UPLOAD_LIMIT_7D__
+__TURN_CONFIG__
 url_preview_enabled: false
 default_identity_server: null
 allow_public_rooms_without_auth: false

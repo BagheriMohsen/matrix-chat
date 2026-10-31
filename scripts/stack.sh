@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 action=${1:-}
 mode=${2:-}
+calls=${3:-0}
 
 case "$mode" in
   production)
@@ -20,6 +21,14 @@ case "$mode" in
     exit 2
     ;;
 esac
+
+[[ $calls == 0 || $calls == 1 ]] || { echo "CALLS must be 0 or 1." >&2; exit 2; }
+calls_compose=(docker compose -f compose.yaml --profile calls)
+if [[ $calls == 1 ]]; then
+  [[ $mode == production ]] || { echo "CALLS=1 is supported only for the production Compose profile." >&2; exit 2; }
+  compose+=(--profile calls)
+  services+=(coturn)
+fi
 
 require_env() {
   [[ -f .env ]] || { echo "Missing .env. Copy .env.example to .env first." >&2; exit 1; }
@@ -82,7 +91,7 @@ check_url() {
 }
 
 dashboard() {
-  local bad=0 service name health
+  local bad=0 service name health turn_enabled turn_line turn_health
   urls
   printf '\nMatrix stack status\n'
   printf '  Mode: %s\n' "$mode"
@@ -99,6 +108,18 @@ dashboard() {
     check_url "Synapse Admin" "$admin_url" || bad=1
   else
     printf '  %-14s disabled in production\n' "Synapse Admin:"
+  fi
+  turn_enabled=$(setting TURN_ENABLED)
+  if [[ $turn_enabled == 1 ]]; then
+    turn_line=$("${calls_compose[@]}" ps -q coturn 2>/dev/null || true)
+    if [[ -n $turn_line ]]; then
+      turn_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$turn_line" 2>/dev/null || printf unavailable)
+    else
+      turn_health=not-running
+    fi
+    printf '  %-14s configured; coturn is %s (two-client call test required)\n' "Calling:" "$turn_health"
+  else
+    printf '  %-14s disabled\n' "Calling:"
   fi
   if (( bad )); then
     printf '\nWarning: one or more services or endpoints are unavailable. See: make MODE=%s logs\n' "$mode" >&2
@@ -123,6 +144,10 @@ initialize() {
 case "$action" in
   up)
     initialize
+    if [[ $calls == 1 && $(setting TURN_ENABLED) != 1 ]]; then
+      echo "CALLS=1 requires TURN_ENABLED=1 and valid TURN settings in .env." >&2
+      exit 1
+    fi
     "${compose[@]}" up -d --pull never
     for _ in $(seq 1 30); do
       all_healthy && { dashboard; exit 0; }
@@ -133,7 +158,11 @@ case "$action" in
     exit 1
     ;;
   down)
-    "${compose[@]}" stop
+    if [[ $mode == production ]]; then
+      "${calls_compose[@]}" stop
+    else
+      "${compose[@]}" stop
+    fi
     ;;
   status)
     require_env
@@ -143,7 +172,7 @@ case "$action" in
     "${compose[@]}" logs --follow --tail=100 "${services[@]}"
     ;;
   *)
-    echo "Usage: stack.sh {up|down|status|logs} {production|local}" >&2
+    echo "Usage: stack.sh {up|down|status|logs} {production|local} [0|1]" >&2
     exit 2
     ;;
 esac

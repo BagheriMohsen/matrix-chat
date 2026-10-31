@@ -80,6 +80,11 @@ Copy .env.example; it documents the small supported configuration surface.
 | MEDIA_UPLOAD_LIMIT_24H, MEDIA_UPLOAD_LIMIT_7D | 100M, 500M | Per-user upload totals for 24 hours and 7 days. |
 | LOCAL_HOST, LOCAL_ELEMENT_PORT, LOCAL_ADMIN_PORT | localhost, 8080, 8081 | Local-only URLs and ports. |
 | ADMIN_PATH | / | Local Admin path: /, /panel, /admin, or /management. |
+| TURN_ENABLED | 0 | Enable Synapse TURN credentials and optional coturn. |
+| TURN_HOST, TURN_EXTERNAL_IP | empty | Matrix domain and its public IPv4 address. |
+| TURN_PORT, TURN_TLS_PORT | 3478, 5349 | TURN and TURNS listening ports. |
+| TURN_MIN_PORT, TURN_MAX_PORT | 49160, 49200 | UDP relay range. |
+| TURN_SHARED_SECRET | empty | Shared coturn/Synapse secret; at least 32 characters. |
 
 Compose does not interpolate mounted files. scripts/init.sh renders fresh Synapse configuration; scripts/render-config.py renders Nginx, Element, and Admin files under ignored data/. It validates domains, URLs, ports, paths, database names, and sizes without printing secrets.
 
@@ -149,11 +154,36 @@ configuration, TLS, a shared TURN secret, monitoring, and memory/CPU load. A
 a realistic single-host target for reliable LiveKit group calls. Federation being
 disabled does not prevent local users from calling each other.
 
-Do not expose a call button until that optional calling deployment is provisioned
-and tested end-to-end. The minimal future plan is an explicit `calls` Compose
-profile containing hardened coturn for 1:1 calls; add MatrixRTC/LiveKit only on a
-separately sized host after validating its pinned versions, relay port range,
-TLS certificate, NAT mapping, and capacity.
+Group calling remains out of scope: coturn only enables legacy one-to-one calls;
+MatrixRTC/LiveKit needs a separately sized and tested deployment.
+
+### Optional one-to-one calls
+
+Set TURN_HOST to the Matrix domain, TURN_EXTERNAL_IP to the server's public IPv4,
+and TURN_ENABLED=1. Generate TURN_SHARED_SECRET without printing or committing it:
+
+~~~sh
+openssl rand -base64 48 | tr -d '\n'
+make up CALLS=1
+~~~
+
+Open provider and host firewalls for TURN_PORT (3478) over UDP/TCP,
+TURN_TLS_PORT (5349) over TCP, and every UDP port from TURN_MIN_PORT through
+TURN_MAX_PORT. Behind NAT, forward the same ports/range and set TURN_EXTERNAL_IP
+to the public address. TURNS uses the existing certificate, so TURN_HOST must
+equal MATRIX_SERVER_NAME. UDP TURN is not TLS, although WebRTC media uses
+DTLS-SRTP.
+
+Coturn uses Synapse-issued time-limited shared-secret credentials; its CLI and
+anonymous access are disabled, private/multicast destinations are blocked, and
+TCP relay allocations are disabled. It has a 128 MiB / 0.5 CPU Compose limit;
+relayed-call bandwidth remains workload-dependent. `make down` also stops it.
+
+Manual acceptance test: sign into two authenticated Element Web clients on
+different networks, place direct audio then video calls, verify both directions,
+and check browser WebRTC diagnostics for a `relay` candidate. Repeat on a
+restrictive network to force TURN. A healthy coturn container is not proof that
+a call works.
 
 scripts/offline-export.sh exports pinned images, verified Element files, and templates. On the target, verify checksums, load images, copy Element into data/element/, then run initialization and docker compose up -d --pull never. It excludes .env, database data, keys, certificates, and media.
 
