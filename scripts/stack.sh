@@ -129,7 +129,12 @@ dashboard() {
   else
     printf '  %-14s disabled in production\n' "Synapse Admin:"
   fi
-  turn_enabled=$(setting TURN_ENABLED)
+  # TURN_ENABLED is optional for existing .env files; render-config defaults it
+  # to disabled, so do not ask its strict --get mode for an absent key.
+  turn_enabled=0
+  if grep -q '^TURN_ENABLED=' .env; then
+    turn_enabled=$(setting TURN_ENABLED)
+  fi
   if [[ $turn_enabled == 1 ]]; then
     turn_line=$("${calls_compose[@]}" ps -q coturn 2>/dev/null || true)
     if [[ -n $turn_line ]]; then

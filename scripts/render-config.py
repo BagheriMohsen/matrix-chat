@@ -67,13 +67,16 @@ def validate(values):
     host = required(values, "LOCAL_HOST")
     if not HOST.fullmatch(host):
         fail("LOCAL_HOST must be a hostname or IPv4 address")
+    local_ports = {}
     for key in ("LOCAL_ELEMENT_PORT", "LOCAL_ADMIN_PORT"):
         try:
-            port = int(required(values, key))
+            local_ports[key] = int(required(values, key))
         except ValueError:
             fail(f"{key} must be a port number")
-        if not 1024 <= port <= 65535:
+        if not 1024 <= local_ports[key] <= 65535:
             fail(f"{key} must be between 1024 and 65535")
+    if local_ports["LOCAL_ELEMENT_PORT"] == local_ports["LOCAL_ADMIN_PORT"]:
+        fail("LOCAL_ELEMENT_PORT and LOCAL_ADMIN_PORT must differ")
     path = required(values, "ADMIN_PATH")
     if not ADMIN_PATH.fullmatch(path):
         fail("ADMIN_PATH must be / or an absolute path without a trailing slash")
