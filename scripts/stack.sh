@@ -111,7 +111,7 @@ check_url() {
 }
 
 dashboard() {
-  local bad=0 service name health turn_enabled turn_line turn_health
+  local bad=0 service name health turn_enabled turn_line turn_health make_prefix
   urls
   printf '\nMatrix stack status\n'
   printf '  Mode: %s\n' "$mode"
@@ -141,6 +141,11 @@ dashboard() {
   else
     printf '  %-14s disabled\n' "Calling:"
   fi
+  make_prefix="make"
+  [[ $mode == local ]] && make_prefix="make MODE=local"
+  printf '\nLifecycle\n'
+  printf '  Restart: %s restart\n' "$make_prefix"
+  printf '  Update:  git pull --ff-only && %s update\n' "$make_prefix"
   if (( bad )); then
     printf '\nWarning: one or more services or endpoints are unavailable. See: make MODE=%s logs\n' "$mode" >&2
     return 1
@@ -163,21 +168,51 @@ initialize() {
   fi
 }
 
+validate_calls() {
+  if [[ $calls == 1 && $(setting TURN_ENABLED) != 1 ]]; then
+    echo "CALLS=1 requires TURN_ENABLED=1 and valid TURN settings in .env." >&2
+    exit 1
+  fi
+}
+
+wait_for_ready() {
+  for _ in $(seq 1 30); do
+    all_healthy && { dashboard; return 0; }
+    sleep 2
+  done
+  dashboard || true
+  echo "Timed out waiting for healthy services." >&2
+  return 1
+}
+
+restart_stack() {
+  local affected=(synapse nginx)
+  if [[ $mode == local ]]; then
+    affected=(synapse synapse-admin nginx)
+  elif [[ $calls == 1 ]]; then
+    affected+=(coturn)
+  fi
+  initialize
+  validate_calls
+  "${compose[@]}" up -d --pull never --force-recreate "${affected[@]}"
+  wait_for_ready
+}
+
 case "$action" in
   up)
     initialize
-    if [[ $calls == 1 && $(setting TURN_ENABLED) != 1 ]]; then
-      echo "CALLS=1 requires TURN_ENABLED=1 and valid TURN settings in .env." >&2
-      exit 1
-    fi
+    validate_calls
     "${compose[@]}" up -d --pull never
-    for _ in $(seq 1 30); do
-      all_healthy && { dashboard; exit 0; }
-      sleep 2
-    done
-    dashboard || true
-    echo "Timed out waiting for healthy services." >&2
-    exit 1
+    wait_for_ready
+    ;;
+  restart)
+    restart_stack
+    ;;
+  update)
+    require_env
+    echo "Using checked-out repository changes; Git is not modified."
+    "${compose[@]}" pull --policy missing
+    restart_stack
     ;;
   down)
     if [[ $mode == production ]]; then
@@ -194,7 +229,7 @@ case "$action" in
     "${compose[@]}" logs --follow --tail=100 "${services[@]}"
     ;;
   *)
-    echo "Usage: stack.sh {up|down|status|logs} {production|local} [0|1]" >&2
+    echo "Usage: stack.sh {up|down|restart|update|status|logs} {production|local} [0|1]" >&2
     exit 2
     ;;
 esac

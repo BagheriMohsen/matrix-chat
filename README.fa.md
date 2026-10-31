@@ -47,11 +47,15 @@ make up
 make status
 make logs
 make down
+make restart
+make update
 
 make MODE=local up
 make MODE=local status
 make MODE=local logs
 make MODE=local down
+make MODE=local restart
+make MODE=local update
 ~~~
 
 `make up` فقط در صورت نیاز init می‌کند، داده را reset نمی‌کند، Element لازم را
@@ -60,7 +64,12 @@ make MODE=local down
 URLهای Element، Matrix API و در حالت محلی Admin از تنظیمات تولیدشده خوانده
 می‌شوند. یک URL فقط پس از بررسی موفق HTTP در دسترس علامت می‌خورد. `make down`
 فقط کانتینرها را stop می‌کند و volume یا دادهٔ کاربر را حذف نمی‌کند. `make help`
-فهرست فرمان‌ها را نشان می‌دهد.
+فهرست فرمان‌ها را نشان می‌دهد. `make restart` تنظیمات مدیریت‌شده را دوباره تولید
+و فقط Synapse/Nginx (و Admin محلی یا coturn فعال) را recreate می‌کند، نه
+PostgreSQL. `make update` هرگز Git را تغییر نمی‌دهد: ابتدا خودتان `git pull
+--ff-only` را اجرا کنید؛ سپس فقط image پین‌شدهٔ گم‌شده را pull، asset تأییدشدهٔ
+گم‌شده را آماده و همین restart امن را انجام می‌دهد. هر دو فرمان با image/asset
+cache‌شده آفلاین کار می‌کنند.
 
 ## تنظیمات
 
@@ -105,6 +114,98 @@ Element در http://LOCAL_HOST:LOCAL_ELEMENT_PORT و Admin در http://LOCAL_HOS
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/users.sh create alice
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/media.sh usage
 ~~~
+
+## مدیریت کاربر و مجوزهای اتاق
+
+Admin UI محدود به loopback از Admin API native Synapse استفاده می‌کند. server
+admin می‌تواند کاربر، device/session و عضویت اتاق را بررسی یا مدیریت کند و این
+دسترسی در تولید منتشر نمی‌شود. helper محلی زیر actionهای native را که ممکن است
+در نسخهٔ پین‌شدهٔ Admin UI دیده نشوند پوشش می‌دهد:
+
+~~~sh
+scripts/users.sh devices alice
+scripts/users.sh lock alice
+scripts/users.sh suspend alice
+scripts/users.sh revoke-device alice DEVICE_ID
+scripts/users.sh revoke-all alice
+scripts/users.sh password alice       # reset گذرواژه و logout deviceها
+scripts/users.sh deactivate alice     # پیام/رسانه را erase نمی‌کند
+~~~
+
+lock، suspend، لغو device و deactivate نیازمند تایپ تأیید نمایش‌داده‌شده‌اند.
+`unlock` و `unsuspend` محدودیت خود را برمی‌گردانند؛ deactivate مخرب‌تر است زیرا
+Synapse device، token، password material و عضویت اتاق را حذف می‌کند، اما پیام
+ارسال‌شده، رسانهٔ آپلودشده یا backup را خودکار حذف نمی‌کند. لغو device token آن
+را نامعتبر می‌کند و ممکن است تاریخچهٔ رمزگذاری‌شده روی همان دستگاه قابل‌بازیابی
+نباشد.
+
+مدیر اتاق با server admin متفاوت است. در Element بخش **Room Settings** و
+**People** و **Roles & Permissions** برای invite، حذف، ban و تعیین Matrix power
+level استفاده می‌شود. power levelهای خود Matrix، ارسال، invite، kick، ban،
+تنظیمات/state اتاق و `m.room.retention` را سمت‌سرور کنترل می‌کنند و عضو عادی
+هیچ اختیار سراسری ندارد. این پروژه block سراسری invite قبلی را برداشته تا invite
+مدیر اتاق ممکن شود. Matrix ACL سراسریِ ریزتر از power level برای هر اتاق ندارد؛
+برای سیاست دقیق‌تر event مربوط به power level همان اتاق را تنظیم کنید.
+
+**Import room keys** در Element، import تاریخچهٔ chat نیست: export رمزدارِ کلیدهای
+E2EE Megolm را فقط در مرورگر/دستگاه همان کاربر وارد می‌کند. Element Web 1.12.33
+تنظیم پشتیبانی‌شده‌ای برای غیرفعال‌کردن فقط این قابلیت محلی ندارد و Synapse نیز
+نمی‌تواند آن را enforce کند. هیچ switch گمراه‌کنندهٔ server-side یا fork رابط
+رمزگذاری اضافه نشده است؛ این کار پیام import، join اتاق، upload رسانه یا script
+backup/export پروژه نیست.
+
+## نگه‌داری و حذف اتاق
+
+موتور native نگه‌داری پیام Synapse فعال است. پیش‌فرض هر اتاق **خاموش** است؛ تا
+زمانی که یک state event مجاز تنظیم نشود، نگه‌داری نامحدود است. Synapse زمان مؤثر
+را بین ۱ تا ۹۰ روز محدود می‌کند و purge روزانهٔ خود را اجرا می‌کند. مدیر اتاق
+(معمولاً power level 100؛ power level خود اتاق تعیین‌کننده است) می‌تواند state key
+خالی و `m.room.retention` را با یکی از این محتواها تنظیم کند:
+
+| انتخاب | `max_lifetime` (میلی‌ثانیه) |
+| --- | ---: |
+| خاموش | `{}` |
+| ۱ روز | `86400000` |
+| ۷ روز | `604800000` |
+| ۳۰ روز | `2592000000` |
+| ۹۰ روز | `7776000000` |
+
+Element Web 1.12.33 برای این قابلیت experimental، انتخاب‌گر پشتیبانی‌شده در
+Room Settings ندارد. بدون fork کلاینت، مدیر مجاز اتاق در composer فرمان
+`/devtools` را باز می‌کند، **Send custom state event** را می‌زند، نوع را
+`m.room.retention`، state key را خالی و JSON جدول را وارد می‌کند. عضو عادی در
+power level معمول نمی‌تواند این state event را بفرستد و Synapse هر زمان درخواستی
+را به ۱ تا ۹۰ روز محدود می‌کند. Synapse به‌صورت native فقط همین گزینه‌های جدول
+را اجباری نمی‌کند.
+
+رویدادهای منقضی ابتدا از timeline پنهان و سپس در اجرای بعدی purge روزانه از
+دیتابیس Synapse پاک می‌شوند؛ پیام‌های قدیمی اتاق نیز با policy جدید پردازش
+می‌شوند. state eventها، آخرین رویداد اتاق، cache کلاینت، نسخهٔ E2EE موجود در
+دستگاه، export، رسانه و backup پاک نمی‌شوند. پس از به‌روزرسانی این پروژه، برای
+افزودن block مدیریت‌شده به سرور قبلاً init‌شده، `bash scripts/init.sh` را اجرا و
+Synapse را restart کنید.
+
+برای حذف دائمی سمت‌سرور، از Synapse Admin محلی استفاده کنید: در **Rooms** شناسه
+و جزئیات را بررسی کنید، **Delete room** را بزنید، فقط پس از بررسی هدف گزینهٔ
+**purge** را فعال و تأیید صریح UI را کامل کنید. این کار Delete Room Admin API
+احراز هویت‌شدهٔ Synapse را صدا می‌زند و فقط server admin مجاز است. پیش از کامل
+دانستن عملیات status حذف را بررسی کنید. این کار `scripts/media.sh`، backup یا
+نسخه‌های E2EE/کلاینت را خودکار حذف نمی‌کند و ممکن است برگشت‌ناپذیر باشد.
+
+## امنیت حساب و دستگاه
+
+ورود local-password در Synapse و Element Web 1.12.33 جریان کامل ثبت‌نام، بازیابی
+و غیرفعال‌سازی TOTP یا passkey برای کاربر ندارند. هیچ 2FA ناقصی فعال نشده است؛
+کلاینت mobile می‌تواند چنین لایه‌ای را با password login دور بزند. راه حداقلیِ
+ممکن، مهاجرت طراحی‌شده به OIDC self-hosted (یا Matrix Authentication Service)
+است که MFA لازم را فراهم کند؛ این کار سرویس احراز هویت، مهاجرت داده، endpoint
+HTTPS و آزمون سازگاری اضافه می‌کند و خارج از استک سبک فعلی است.
+
+Element Web PIN یا app-lock بیومتریکِ قابل‌تنظیم از سمت سرور ندارد. از قفل
+مرورگر/سیستم‌عامل، رمزگذاری کامل دیسک، device verification و recovery key
+Element استفاده کنید. Element mobile ممکن است بسته به پلتفرم و نسخه قفل بومی
+داشته باشد؛ آن را روی خود دستگاه تنظیم کنید. این حفاظت محلی دستگاه است، نه 2FA
+سمت‌سرور، و PIN هرگز به این سرور ارسال نمی‌شود.
 
 ## رسانه، پشتیبان، بازیابی و حالت آفلاین
 

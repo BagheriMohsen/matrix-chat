@@ -54,11 +54,15 @@ make up
 make status
 make logs
 make down
+make restart
+make update
 
 make MODE=local up
 make MODE=local status
 make MODE=local logs
 make MODE=local down
+make MODE=local restart
+make MODE=local update
 ~~~
 
 `make up` initializes only when needed, never resets data, prepares missing
@@ -67,7 +71,12 @@ starts with already downloaded images, waits for health checks, and prints a das
 Element URL, Matrix API URL, and (in local mode) the Admin URL from the rendered
 configuration. A URL is marked available only after an HTTP check succeeds.
 `make down` uses `docker compose stop`, so it does not remove volumes or user
-data. `make help` lists these commands.
+data. `make restart` re-renders managed configuration and force-recreates only
+Synapse/Nginx (plus local Admin or enabled coturn), never PostgreSQL. `make
+update` never runs Git: first run `git pull --ff-only` yourself, then it pulls
+only missing pinned images, prepares missing verified assets, and performs that
+safe restart. Both commands work offline when images/assets are cached. `make
+help` lists these commands.
 
 ## Configuration
 
@@ -123,6 +132,103 @@ The generated local proxy redirects /panel to /panel/, strips the path only befo
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/users.sh create alice
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/media.sh usage
 ~~~
+
+## User administration and room permissions
+
+The loopback-only Admin UI uses Synapse's native Admin API. Server admins can
+inspect users, deactivate them, manage devices/sessions, and inspect room
+membership; it remains unavailable in production. The bundled local helper
+covers native actions that may not be exposed by this pinned Admin UI version:
+
+~~~sh
+scripts/users.sh devices alice
+scripts/users.sh lock alice
+scripts/users.sh suspend alice
+scripts/users.sh revoke-device alice DEVICE_ID
+scripts/users.sh revoke-all alice
+scripts/users.sh password alice       # resets password and logs out devices
+scripts/users.sh deactivate alice     # preserves messages/media; does not erase
+~~~
+
+Lock, suspend, device revocation, and deactivation require typing the shown
+confirmation. `unlock` and `unsuspend` reverse their respective restriction;
+deactivation is materially destructive because Synapse removes devices, tokens,
+password material, and room membership. It does not automatically delete sent
+messages, uploaded media, or backups. Device revocation invalidates the selected
+device token and can make encrypted history unavailable on that device.
+
+Room ownership is separate from server administration. In Element **Room
+Settings**, a room owner/admin uses **People** and **Roles & Permissions** to
+invite, remove, ban, and assign Matrix power levels. The normal Matrix power
+levels govern sending, invitations, kicks, bans, room state/settings, and
+`m.room.retention`; ordinary members receive no server-wide privileges. This
+project enables room-admin invitations by removing its former server-wide invite
+block. Matrix does not offer a server-managed per-room ACL beyond power levels;
+use the room's power-level event for any more granular policy.
+
+Element's **Import room keys** is not chat-history import: it imports a
+passphrase-protected export of E2EE Megolm keys into that browser/device. Element
+Web 1.12.33 has no supported deployment setting to disable only this local
+client feature, and Synapse cannot enforce it. No misleading server-side switch
+or encryption UI fork was added; it does not import messages, join rooms, upload
+media, or affect the project backup/export scripts.
+
+## Room retention and deletion
+
+Synapse's native retention engine is enabled. Rooms are **Off** by default: a
+room starts retention only after an authorized room-state event is set. Synapse
+accepts effective message lifetimes from 1 to 90 days and runs its built-in daily
+purge job. A room admin (normally power level 100; the room's power levels
+ultimately decide) can set `m.room.retention` with a blank state key and one of:
+
+| Choice | `max_lifetime` (milliseconds) |
+| --- | ---: |
+| Off | `{}` |
+| 1 day | `86400000` |
+| 7 days | `604800000` |
+| 30 days | `2592000000` |
+| 90 days | `7776000000` |
+
+Element Web 1.12.33 has no supported Room Settings picker for this experimental
+Matrix feature. Without a client fork, an authorized room admin can send the
+native state event through Element's `/devtools` command: **Send custom state
+event**, type `m.room.retention`, leave the state key blank, and use the selected
+JSON content above. Ordinary members cannot send this state event at normal room
+power levels; Synapse also clamps any requested lifetime to 1–90 days. Native
+Synapse does not restrict policies to only the listed presets.
+
+Retention hides expired timeline events, then purges them from Synapse's database
+on a later daily job; existing messages are handled according to a newly set
+room policy. It does not remove state events, the final event in a room, client
+caches, E2EE plaintext/ciphertext already held by clients, exported copies,
+media files, or backups. Re-run `bash scripts/init.sh` after updating this
+project to add the managed retention block to an already initialized server,
+then restart Synapse.
+
+For permanent server-side room removal, use the loopback-only Synapse Admin UI:
+open **Rooms**, inspect the room ID/details, choose **Delete room**, enable
+**purge** only after checking the target, and complete its confirmation dialog.
+This invokes Synapse's authenticated Delete Room Admin API; only server admins
+can use it. Check the deletion status before treating it as complete. It never
+automatically runs `scripts/media.sh`, deletes backups, or removes client/E2EE
+copies. Room deletion is destructive and may be impossible to reverse.
+
+## Account and device security
+
+The pinned Synapse local-password login and Element Web 1.12.33 do not provide
+a complete user-managed TOTP or passkey enrolment, recovery, and disable flow.
+No partial 2FA is enabled: it could be bypassed by Matrix mobile clients using
+password login. The smallest viable route is a separately planned migration to
+a self-hosted OIDC identity provider (or Matrix Authentication Service) that
+supports the desired MFA; it adds an authentication service, data migration,
+HTTPS endpoints, and compatibility testing, so it is outside this lightweight
+stack.
+
+Element Web has no server-configurable PIN/biometric app lock. Use browser/OS
+screen lock, full-disk encryption, and Element's device verification and
+recovery key. Mobile Element clients may offer a native app lock depending on
+their platform and version; configure it on the device. It is local device
+protection, not server-side 2FA, and this server never receives a PIN.
 
 ## Media, backup, restore, and offline use
 

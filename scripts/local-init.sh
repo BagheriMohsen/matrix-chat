@@ -48,9 +48,24 @@ if original.count(old) != 1:
     raise SystemExit("Expected production public_baseurl was not found; preserving existing configuration")
 local = original.replace(old, f'public_baseurl: "http://{os.environ["LOCAL_HOST"]}:{os.environ["LOCAL_ELEMENT_PORT"]}/"', 1)
 target = Path("/data/homeserver.local.yaml")
+
+def without_managed_blocks(content):
+    import re
+    for name in ("retention", "room permissions", "TURN"):
+        content = re.sub(
+            rf"(?ms)^# BEGIN managed {name} configuration\n.*?^# END managed {name} configuration\n?",
+            "",
+            content,
+        )
+    content = re.sub(r"(?m)^block_non_admin_invites: (?:true|false)\n?", "", content)
+    return "\n".join(line for line in content.splitlines() if line.strip()) + "\n"
+
 if target.exists():
-    if target.read_text() != local:
+    if without_managed_blocks(target.read_text()) != without_managed_blocks(local):
         raise SystemExit("Existing local Synapse config differs; refusing to overwrite it")
+    target.write_text(local)
+    os.chmod(target, 0o600)
+    os.chown(target, 991, 991)
 else:
     with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as file:
         file.write(local)

@@ -41,6 +41,7 @@ media_upload_limits:
     max_size: __MEDIA_UPLOAD_LIMIT_24H__
   - time_period: 7d
     max_size: __MEDIA_UPLOAD_LIMIT_7D__
+__RETENTION_CONFIG__
 __TURN_CONFIG__
 url_preview_enabled: false
 default_identity_server: null
@@ -48,7 +49,7 @@ allow_public_rooms_without_auth: false
 allow_public_rooms_over_federation: false
 enable_room_list_search: false
 alias_creation_rules: []
-block_non_admin_invites: true
+__ROOM_PERMISSIONS_CONFIG__
 user_directory:
   enabled: false
 

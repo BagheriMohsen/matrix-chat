@@ -133,6 +133,27 @@ def nginx_size(size):
     return size.lower()
 
 
+def retention_config():
+    return """# BEGIN managed retention configuration
+# Rooms without m.room.retention retain messages indefinitely.
+retention:
+  enabled: true
+  allowed_lifetime_min: 1d
+  allowed_lifetime_max: 90d
+# END managed retention configuration
+
+"""
+
+
+def room_permissions_config():
+    return """# BEGIN managed room permissions configuration
+# Matrix room power levels, rather than server-admin status, authorize invites.
+block_non_admin_invites: false
+# END managed room permissions configuration
+
+"""
+
+
 def write_template(source, destination, replacements):
     text = (ROOT / source).read_text()
     for key, value in replacements.items():
@@ -203,17 +224,17 @@ def main():
         if not homeserver.is_file():
             fail("initialize Synapse before updating TURN configuration")
         content = homeserver.read_text()
-        content = re.sub(
-            r"(?ms)^# BEGIN managed TURN configuration\n.*?^# END managed TURN configuration\n?",
-            "",
-            content,
-        )
-        managed_turn = turn_synapse_config(turn)
-        if managed_turn:
-            anchor = re.search(r"(?m)^signing_key_path:", content)
-            if not anchor:
-                fail("could not find signing_key_path in homeserver.yaml")
-            content = content[:anchor.start()] + managed_turn + content[anchor.start():]
+        for name in ("retention", "room permissions", "TURN"):
+            content = re.sub(
+                rf"(?ms)^# BEGIN managed {name} configuration\n.*?^# END managed {name} configuration\n?",
+                "",
+                content,
+            )
+        content = re.sub(r"(?m)^block_non_admin_invites: (?:true|false)\n?", "", content)
+        anchor = re.search(r"(?m)^signing_key_path:", content)
+        if not anchor:
+            fail("could not find signing_key_path in homeserver.yaml")
+        content = content[:anchor.start()] + retention_config() + room_permissions_config() + turn_synapse_config(turn) + content[anchor.start():]
         homeserver.write_text(content)
         homeserver.chmod(0o600)
         return
@@ -229,6 +250,8 @@ def main():
             "MAX_UPLOAD_SIZE": values["MAX_UPLOAD_SIZE"],
             "MEDIA_UPLOAD_LIMIT_24H": values["MEDIA_UPLOAD_LIMIT_24H"],
             "MEDIA_UPLOAD_LIMIT_7D": values["MEDIA_UPLOAD_LIMIT_7D"],
+            "RETENTION_CONFIG": retention_config(),
+            "ROOM_PERMISSIONS_CONFIG": room_permissions_config(),
             "SIGNING_KEY_PATH_JSON": json.dumps(f"/data/{server_name}.signing.key"),
             "LOG_CONFIG_PATH_JSON": json.dumps(f"/data/{server_name}.log.config"),
             "TURN_CONFIG": turn_synapse_config(turn),
