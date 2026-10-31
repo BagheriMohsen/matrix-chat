@@ -36,6 +36,11 @@ send_federation: false
 enable_media_repo: true
 media_store_path: /data/media_store
 max_upload_size: 20M
+media_upload_limits:
+  - time_period: 24h
+    max_size: 100M
+  - time_period: 7d
+    max_size: 500M
 url_preview_enabled: false
 default_identity_server: null
 allow_public_rooms_without_auth: false

@@ -118,8 +118,12 @@ content. Use `scripts/backup.sh`, encrypt its output before transfer, and read
 
 Synapse stores local uploads and thumbnails under persistent
 `data/synapse/media_store/`; PostgreSQL uses persistent `data/postgres/`.
-Synapse and Nginx both cap each upload at 20 MiB, and all three containers
-have bounded Docker log rotation. No automatic local media retention is enabled.
+Synapse and Nginx both cap each upload at 20 MiB (`20M` in Synapse and `20m`
+in Nginx). Synapse also limits every user to 100 MiB uploaded in a rolling 24
+hours and 500 MiB in a rolling 7 days. These are upload-rate limits, not
+permanent storage quotas: previously uploaded media continues to consume disk
+space, and no automatic local media retention is enabled. All three containers
+have bounded Docker log rotation.
 Synapse's [media retention setting](https://element-hq.github.io/synapse/v1.161/usage/configuration/config_documentation.html#media_retention)
 can be configured later, but it purges by last access, not by whether a message
 still references a file. Leave it unset unless that loss is acceptable.
@@ -158,6 +162,41 @@ events ([Matrix encrypted file format](https://spec.matrix.org/v1.16/client-serv
 Never use an age-based purge as reference-safe cleanup. These media
 commands do not touch the database files, signing key, Synapse configuration,
 or encryption metadata.
+
+### Change upload limits
+
+The checked-in Synapse template uses native `max_upload_size` and
+`media_upload_limits`; no per-user overrides or automatic deletion are enabled.
+For a new deployment, `scripts/init.sh` copies these values into
+`data/synapse/homeserver.yaml`. For an existing deployment, update the same
+stanza in that generated file, preserving its credentials and keys:
+
+```yaml
+max_upload_size: 20M
+media_upload_limits:
+  - time_period: 24h
+    max_size: 100M
+  - time_period: 7d
+    max_size: 500M
+```
+
+For the local stack, make the same change in
+`data/synapse/homeserver.local.yaml`; it is a copy of the production config
+with only `public_baseurl` changed. Apply either configuration without touching
+volumes or user data by restarting only Synapse:
+
+```sh
+docker compose up -d --force-recreate synapse
+# Local stack:
+docker compose -p matrix_local -f compose.local.yaml up -d --force-recreate synapse
+```
+
+Verify the file before restarting with
+`docker compose exec synapse python3 -m synapse.config -c /data/homeserver.yaml`
+(use `/data/homeserver.local.yaml` with the local Compose project). The
+[Synapse v1.161 configuration reference](https://element-hq.github.io/synapse/v1.161/usage/configuration/config_documentation.html#media_upload_limits)
+documents both rolling limits and their relationship to the individual upload
+limit.
 
 ## Privacy and client expectations
 
