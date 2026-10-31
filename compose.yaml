@@ -74,12 +74,32 @@ services:
       - ./data/element:/usr/share/nginx/html:ro
       - ./data/acme:/var/www/acme:ro
       - ./secrets/tls:/etc/nginx/tls:ro
+      - ./secrets/push-tls:/etc/nginx/push-tls:ro
     networks: [frontend, backend]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ${MATRIX_SERVER_NAME}' http://127.0.0.1/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.14.0
+    platform: linux/amd64
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: https://push.koten.ir
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_ENABLE_LOGIN: "false"
+    volumes:
+      - ./data/ntfy:/var/cache/ntfy
+    networks: [backend]
+    mem_limit: 128m
     logging:
       driver: local
       options: {max-size: "10m", max-file: "3"}
