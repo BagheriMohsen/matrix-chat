@@ -30,14 +30,15 @@ POSTGRES_PASSWORD=use-a-long-random-password-here
 
 MATRIX_SERVER_NAME is the permanent Matrix identity in user IDs and room addresses. Never change it after scripts/init.sh initializes the server.
 
-While online, prepare pinned images and verified Element files, initialize, copy Element, install certificates, and start:
+Initialize once so the TLS directory exists, install certificates, then start. On
+the first online `make up`, pinned images and the checksum-verified Element Web
+archive are prepared automatically. Later offline starts reuse a verified
+`offline-bundle` when it is present.
 
 ~~~sh
-ELEMENT_SHA256=04e180516430381d5f5e528ea345a435784bba26f76a84f106a623febd3fcd67 scripts/offline-export.sh
 bash scripts/init.sh
-cp -a offline-bundle/static/element/. data/element/
 chmod 600 secrets/tls/fullchain.pem secrets/tls/privkey.pem
-docker compose up -d --pull never
+make up
 scripts/users.sh admin admin
 ~~~
 
@@ -60,8 +61,9 @@ make MODE=local logs
 make MODE=local down
 ~~~
 
-`make up` initializes only when needed, never resets data, starts with already
-downloaded images, waits for health checks, and prints a dashboard. It shows the
+`make up` initializes only when needed, never resets data, prepares missing
+verified Element assets while online (or verifies and reuses `offline-bundle`),
+starts with already downloaded images, waits for health checks, and prints a dashboard. It shows the
 Element URL, Matrix API URL, and (in local mode) the Admin URL from the rendered
 configuration. A URL is marked available only after an HTTP check succeeds.
 `make down` uses `docker compose stop`, so it does not remove volumes or user

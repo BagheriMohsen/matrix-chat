@@ -26,14 +26,12 @@ PUBLIC_BASE_URL=https://matrix.example.com
 POSTGRES_PASSWORD=use-a-long-random-password-here
 ~~~
 
-MATRIX_SERVER_NAME هویت دائمی Matrix است. پس از اجرای scripts/init.sh هرگز آن را تغییر ندهید.
+MATRIX_SERVER_NAME هویت دائمی Matrix است. پس از اجرای scripts/init.sh هرگز آن را تغییر ندهید. ابتدا یک‌بار init را اجرا کنید تا مسیر TLS ساخته شود، گواهی‌ها را قرار دهید و سپس استک را بالا بیاورید. نخستین `make up` آنلاین imageهای پین‌شده و Element Web با checksum تأییدشده را خودکار آماده می‌کند؛ اجرای آفلاین بعدی از `offline-bundle` تأییدشده استفاده می‌کند.
 
 ~~~sh
-ELEMENT_SHA256=04e180516430381d5f5e528ea345a435784bba26f76a84f106a623febd3fcd67 scripts/offline-export.sh
 bash scripts/init.sh
-cp -a offline-bundle/static/element/. data/element/
 chmod 600 secrets/tls/fullchain.pem secrets/tls/privkey.pem
-docker compose up -d --pull never
+make up
 scripts/users.sh admin admin
 ~~~
 
@@ -56,8 +54,9 @@ make MODE=local logs
 make MODE=local down
 ~~~
 
-`make up` فقط در صورت نیاز init می‌کند، داده را reset نمی‌کند، از imageهای
-دانلودشده استفاده می‌کند، منتظر health check می‌ماند و dashboard چاپ می‌کند.
+`make up` فقط در صورت نیاز init می‌کند، داده را reset نمی‌کند، Element لازم را
+در حالت آنلاین با checksum تأییدشده آماده یا `offline-bundle` را تأیید و استفاده
+می‌کند، از imageهای دانلودشده استفاده می‌کند، منتظر health check می‌ماند و dashboard چاپ می‌کند.
 URLهای Element، Matrix API و در حالت محلی Admin از تنظیمات تولیدشده خوانده
 می‌شوند. یک URL فقط پس از بررسی موفق HTTP در دسترس علامت می‌خورد. `make down`
 فقط کانتینرها را stop می‌کند و volume یا دادهٔ کاربر را حذف نمی‌کند. `make help`

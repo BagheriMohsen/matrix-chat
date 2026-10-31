@@ -34,6 +34,26 @@ require_env() {
   [[ -f .env ]] || { echo "Missing .env. Copy .env.example to .env first." >&2; exit 1; }
 }
 
+prepare_element_assets() {
+  if [[ -f offline-bundle/static/element/index.html ]]; then
+    local element_checksum
+    [[ -f offline-bundle/SHA256SUMS ]] || {
+      echo "offline-bundle has no checksum manifest; refusing to use unverified Element assets." >&2
+      exit 1
+    }
+    element_checksum=$(awk '$2 == "./static/element/index.html" {print $1}' offline-bundle/SHA256SUMS)
+    [[ $element_checksum =~ ^[a-f0-9]{64}$ ]] || {
+      echo "offline-bundle has no valid Element checksum; refusing to use unverified assets." >&2
+      exit 1
+    }
+    printf '%s  %s\n' "$element_checksum" "offline-bundle/static/element/index.html" | sha256sum -c - >/dev/null
+    return
+  fi
+  [[ ! -e offline-bundle ]] || { echo "offline-bundle exists but Element assets are incomplete; inspect it before retrying." >&2; exit 1; }
+  echo "Element assets are missing; preparing the verified offline bundle."
+  bash scripts/offline-export.sh
+}
+
 setting() {
   python3 scripts/render-config.py --get "$1"
 }
@@ -130,10 +150,12 @@ dashboard() {
 initialize() {
   require_env
   if [[ $mode == local ]]; then
+    prepare_element_assets
     bash scripts/local-init.sh
   else
     bash scripts/init.sh
-    if [[ ! -f data/element/index.html && -f offline-bundle/static/element/index.html ]]; then
+    if [[ ! -f data/element/index.html ]]; then
+      prepare_element_assets
       cp -a offline-bundle/static/element/. data/element/
     fi
     [[ -f data/element/index.html ]] || { echo "Element assets are missing; run scripts/offline-export.sh first." >&2; exit 1; }
