@@ -182,6 +182,30 @@ history purge, and media deletion/quarantine may be irreversible and can make
 messages or encrypted history inaccessible. Test only on non-production test
 accounts and rooms first.
 
+## Optional Matrix Analytics
+
+The lightweight Analytics dashboard is served at `/analytics/`; Ketesa's
+supported custom-menu configuration adds an **Analytics** sidebar entry. Sign
+in using an existing Synapse server-admin account. The dashboard
+keeps the resulting Matrix token only in process memory, uses it only for
+read-only Admin API requests, and issues an HttpOnly, same-site dashboard
+session cookie.
+
+It records five-minute aggregate snapshots in `data/analytics/metrics.sqlite3`:
+registered users, rooms, recent `last_seen_ts` activity windows, and media
+statistics when supported by Synapse. It does not collect presence, message
+contents, room events, encryption keys, IP addresses, or Docker API data.
+Host and cgroup resource figures are exposed only after server-admin login;
+container rows use short cgroup IDs because the Docker socket is deliberately
+not mounted.
+
+Analytics is part of the normal `make up`, `make update`, `make restart`,
+`make down`, `make status`, and `make logs` lifecycle in both modes. On its
+first start, those commands create `data/analytics/` with mode 700 for the
+current user; an existing directory is never recursively changed or re-owned.
+The initial visit receives HTTP 401 until an administrator signs in; no token
+or host metric is returned to an unauthenticated browser.
+
 ## Chat feature matrix
 
 The pinned Element Web 1.12.33 already supplies the normal Matrix chat UI; no

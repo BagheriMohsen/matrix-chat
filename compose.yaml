@@ -56,7 +56,7 @@ services:
       synapse:
         condition: service_healthy
     volumes:
-      - ./data/ketesa/config.json:/var/public/config.json:ro
+      - ./data/ketesa/config.json:/var/public/admin/config.json:ro
     networks: [backend]
     read_only: true
     tmpfs: [/tmp]
@@ -64,6 +64,42 @@ services:
     mem_limit: 128m
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+  analytics:
+    image: matrixdotorg/synapse:v1.161.0
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on:
+      synapse:
+        condition: service_healthy
+    entrypoint: ["python3", "/opt/analytics/server.py"]
+    environment:
+      ANALYTICS_BIND: "0.0.0.0"
+      ANALYTICS_PORT: "8080"
+      ANALYTICS_DATA_DIR: /var/lib/analytics
+      ANALYTICS_SESSION_TTL: "3600"
+      SYNAPSE_URL: http://synapse:8008
+    user: "${ANALYTICS_UID:-1000}:${ANALYTICS_GID:-1000}"
+    volumes:
+      - ./src/analytics:/opt/analytics:ro
+      - ./data/analytics:/var/lib/analytics
+      - /proc:/host/proc:ro
+      - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+      - /:/host-root:ro
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)\""]
       interval: 30s
       timeout: 5s
       retries: 3

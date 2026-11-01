@@ -10,11 +10,11 @@ calls=${3:-0}
 case "$mode" in
   production)
     compose=(docker compose -f compose.yaml --profile admin)
-    services=(postgres synapse ketesa nginx)
+    services=(postgres synapse ketesa analytics nginx)
     ;;
   local)
     compose=(docker compose -p matrix_local -f compose.local.yaml)
-    services=(postgres synapse ketesa nginx)
+    services=(postgres synapse ketesa analytics nginx)
     ;;
   *)
     echo "Mode must be production or local (use: make MODE=local ...)." >&2
@@ -66,10 +66,12 @@ urls() {
     element_url="http://$host:$element_port"
     api_url="$element_url/_matrix/client/versions"
     admin_url="http://$host:$admin_port/admin/"
+    analytics_url="http://$host:$admin_port/analytics/"
   else
     element_url=$(setting PUBLIC_BASE_URL)
     api_url="$element_url/_matrix/client/versions"
     admin_url=""
+    analytics_url="$(setting PUBLIC_BASE_URL)/analytics/"
   fi
 }
 
@@ -104,6 +106,17 @@ check_url() {
   return 1
 }
 
+check_protected_url() {
+  local label=$1 url=$2 status
+  status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 "$url" || true)
+  if [[ $status == 401 ]]; then
+    printf '  %-16s %s (admin authentication required)\n' "$label:" "$url"
+    return 0
+  fi
+  printf '  %-16s %s (unexpected HTTP %s)\n' "$label:" "$url" "${status:-unavailable}"
+  return 1
+}
+
 dashboard() {
   local bad=0 service name health turn_enabled=0 turn_line turn_health make_prefix
   urls
@@ -121,6 +134,7 @@ dashboard() {
   else
     printf '  %-16s localhost/SSH tunnel only (/admin/)\n' 'Ketesa Admin:'
   fi
+  check_protected_url 'Analytics' "$analytics_url" || bad=1
   if grep -q '^TURN_ENABLED=' .env; then
     turn_enabled=$(setting TURN_ENABLED)
   fi
@@ -165,6 +179,24 @@ initialize() {
   fi
 }
 
+prepare_analytics_data() {
+  local uid gid owner
+  uid=$(id -u)
+  gid=$(id -g)
+  export ANALYTICS_UID=$uid ANALYTICS_GID=$gid
+  if [[ ! -e data/analytics ]]; then
+    mkdir -m 700 data/analytics
+    return
+  fi
+  [[ -d data/analytics ]] || { echo 'data/analytics exists but is not a directory.' >&2; exit 1; }
+  owner=$(stat -c '%u:%g' data/analytics)
+  [[ $owner == "$uid:$gid" ]] || {
+    echo "data/analytics is owned by $owner, not $uid:$gid; preserving existing SQLite history. Run normal lifecycle commands as its owner or correct this directory manually." >&2
+    exit 1
+  }
+  [[ -w data/analytics ]] || { echo 'data/analytics is not writable by the current user.' >&2; exit 1; }
+}
+
 validate_calls() {
   if [[ $calls == 1 && $(setting TURN_ENABLED) != 1 ]]; then
     echo "CALLS=1 requires TURN_ENABLED=1 and valid TURN settings in .env." >&2
@@ -205,6 +237,7 @@ reload_nginx_if_running() {
 
 start_stack() {
   initialize
+  prepare_analytics_data
   validate_calls
   validate_compose
   "${compose[@]}" up -d --pull never "${services[@]}"
@@ -214,6 +247,7 @@ start_stack() {
 
 update_stack() {
   initialize
+  prepare_analytics_data
   validate_calls
   validate_compose
   echo 'Applying checked-out repository changes; Git is not modified.'
@@ -225,9 +259,10 @@ update_stack() {
 
 restart_stack() {
   initialize
+  prepare_analytics_data
   validate_calls
   validate_compose
-  local affected=(synapse ketesa nginx)
+  local affected=(synapse ketesa analytics nginx)
   [[ $calls == 1 ]] && affected+=(coturn)
   "${compose[@]}" up -d --pull never --force-recreate --no-deps "${affected[@]}"
   wait_for_ready

@@ -30,7 +30,7 @@ echo "$ELEMENT_SHA256  /tmp/element-web-v1.12.33.tar.gz" | sha256sum -c -
 tar -xzf /tmp/element-web-v1.12.33.tar.gz -C "$bundle_dir/static/element" --strip-components=1
 cp data/element/config.json "$bundle_dir/static/element/config.json"
 cp compose.yaml .env.example "$bundle_dir/"
-tar -czf "$bundle_dir/config-templates.tgz" config scripts Makefile README.md README.fa.md .gitignore
+tar -czf "$bundle_dir/config-templates.tgz" config scripts src Makefile README.md README.fa.md .gitignore
 docker image inspect "${images[@]}" --format '{{range .RepoDigests}}{{println .}}{{end}}' > "$bundle_dir/image-digests.txt"
 (cd "$bundle_dir" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
 mv "$bundle_dir" offline-bundle

@@ -1,5 +1,12 @@
 {
   "restrictBaseUrl": "http://localhost:8081",
   "wellKnownDiscovery": false,
-  "corsCredentials": "same-origin"
+  "corsCredentials": "same-origin",
+  "menu": [
+    {
+      "label": "Analytics",
+      "icon": "BarChart",
+      "url": "/analytics/"
+    }
+  ]
 }
