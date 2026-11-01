@@ -1,0 +1,56 @@
+/* Vazirmatn v33.003, SIL Open Font License 1.1. See custom/vazirmatn/OFL.txt. */
+@font-face {
+  font-family: Vazirmatn;
+  src: url("vazirmatn/Vazirmatn-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url("vazirmatn/Vazirmatn-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vazirmatn;
+  src: url("vazirmatn/Vazirmatn-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* Element UI text only: icon fonts and monospace/code styles remain intact. */
+:root {
+  --cpd-font-family-sans: Vazirmatn, system-ui, sans-serif;
+  --font-family: Vazirmatn, system-ui, sans-serif;
+}
+
+body,
+input,
+textarea,
+select,
+button,
+.mx_Dialog,
+.mx_RoomView,
+.mx_RoomList,
+.mx_LeftPanel,
+.mx_RightPanel,
+.mx_Settings,
+.mx_EventTile,
+.mx_MessageComposer,
+.mx_AccessibleButton {
+  font-family: Vazirmatn, system-ui, sans-serif !important;
+}
+
+pre,
+code,
+kbd,
+samp,
+.mx_EventTile_pre,
+.mx_EventTile_code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace !important;
+}

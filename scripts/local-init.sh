@@ -147,5 +147,6 @@ if [[ ! -f data/element/index.html ]]; then
   }
   cp -a offline-bundle/static/element/. data/element/
 fi
+bash scripts/element-theme.sh data/element
 chmod 755 data/element
 echo 'Local assets and configuration are ready. Existing data and credentials were preserved.'

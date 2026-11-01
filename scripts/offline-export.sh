@@ -29,6 +29,7 @@ curl --fail --location --proto '=https' --tlsv1.2 -o /tmp/element-web-v1.12.33.t
 echo "$ELEMENT_SHA256  /tmp/element-web-v1.12.33.tar.gz" | sha256sum -c -
 tar -xzf /tmp/element-web-v1.12.33.tar.gz -C "$bundle_dir/static/element" --strip-components=1
 cp data/element/config.json "$bundle_dir/static/element/config.json"
+bash scripts/element-theme.sh "$bundle_dir/static/element"
 cp compose.yaml .env.example "$bundle_dir/"
 tar -czf "$bundle_dir/config-templates.tgz" config scripts src Makefile README.md README.fa.md .gitignore
 docker image inspect "${images[@]}" --format '{{range .RepoDigests}}{{println .}}{{end}}' > "$bundle_dir/image-digests.txt"

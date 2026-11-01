@@ -393,6 +393,13 @@ a call works.
 
 scripts/offline-export.sh exports pinned images, verified Element files, and templates. On the target, verify checksums, load images, copy Element into data/element/, then run initialization and docker compose up -d --pull never. It excludes .env, database data, keys, certificates, and media.
 
+Element Web uses locally bundled Vazirmatn v33.003 WOFF2 regular, medium, and
+bold fonts for its UI. The SIL Open Font License 1.1 is included with the
+assets. The small override preserves emoji, Element icon fonts, and code/
+monospace formatting. Asset preparation reapplies it after Element extraction,
+offline export, and normal `make` lifecycle operations; it never changes
+Element JavaScript bundles.
+
 Never commit .env, data/, secrets/, backups, or uploaded media. Mobile push can depend on Apple/Google infrastructure and cannot be guaranteed during international internet outages.
 
 ## Checks

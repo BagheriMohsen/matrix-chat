@@ -173,6 +173,7 @@ initialize() {
     [[ -f data/element/index.html ]] || {
       echo "Element assets are missing; run scripts/offline-export.sh first." >&2; exit 1;
     }
+    bash scripts/element-theme.sh data/element
     [[ -f secrets/tls/fullchain.pem && -f secrets/tls/privkey.pem ]] || {
       echo "Production TLS files are missing from secrets/tls/." >&2; exit 1;
     }
