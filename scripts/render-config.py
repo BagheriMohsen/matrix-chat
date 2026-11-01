@@ -153,6 +153,15 @@ block_non_admin_invites: false
 """
 
 
+def room_encryption_default_config():
+    return """# BEGIN managed room encryption default configuration
+# Applies only to rooms created after Synapse reads this configuration.
+encryption_enabled_by_default_for_room_type: all
+# END managed room encryption default configuration
+
+"""
+
+
 def write_template(source, destination, replacements):
     text = (ROOT / source).read_text()
     for key, value in replacements.items():
@@ -208,17 +217,18 @@ def main():
         if not homeserver.is_file():
             fail("initialize Synapse before updating TURN configuration")
         content = homeserver.read_text()
-        for name in ("retention", "room permissions", "TURN"):
+        for name in ("retention", "room permissions", "room encryption default", "TURN"):
             content = re.sub(
                 rf"(?ms)^# BEGIN managed {name} configuration\n.*?^# END managed {name} configuration\n?",
                 "",
                 content,
             )
         content = re.sub(r"(?m)^block_non_admin_invites: (?:true|false)\n?", "", content)
+        content = re.sub(r"(?m)^encryption_enabled_by_default_for_room_type: .*\n?", "", content)
         anchor = re.search(r"(?m)^signing_key_path:", content)
         if not anchor:
             fail("could not find signing_key_path in homeserver.yaml")
-        content = content[:anchor.start()] + retention_config() + room_permissions_config() + turn_synapse_config(turn) + content[anchor.start():]
+        content = content[:anchor.start()] + retention_config() + room_permissions_config() + room_encryption_default_config() + turn_synapse_config(turn) + content[anchor.start():]
         homeserver.write_text(content)
         homeserver.chmod(0o600)
         return
@@ -236,6 +246,7 @@ def main():
             "MEDIA_UPLOAD_LIMIT_7D": values["MEDIA_UPLOAD_LIMIT_7D"],
             "RETENTION_CONFIG": retention_config(),
             "ROOM_PERMISSIONS_CONFIG": room_permissions_config(),
+            "ROOM_ENCRYPTION_DEFAULT_CONFIG": room_encryption_default_config(),
             "SIGNING_KEY_PATH_JSON": json.dumps(f"/data/{server_name}.signing.key"),
             "LOG_CONFIG_PATH_JSON": json.dumps(f"/data/{server_name}.log.config"),
             "TURN_CONFIG": turn_synapse_config(turn),

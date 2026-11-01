@@ -75,14 +75,33 @@ def remove_production_whitelist(content):
 expected = remove_production_whitelist(expected)
 
 def without_managed_blocks(content):
-    for name in ('retention', 'room permissions', 'TURN'):
+    for name in ('retention', 'room permissions', 'room encryption default', 'TURN'):
         content = re.sub(
             rf'(?ms)^# BEGIN managed {re.escape(name)} configuration\n.*?^# END managed {re.escape(name)} configuration\n?',
             '',
             content,
         )
     content = re.sub(r'(?m)^block_non_admin_invites: (?:true|false)\n?', '', content)
+    content = re.sub(r'(?m)^encryption_enabled_by_default_for_room_type: .*\n?', '', content)
     return content
+
+def ensure_room_encryption_default(content):
+    content = re.sub(
+        r'(?ms)^# BEGIN managed room encryption default configuration\n.*?^# END managed room encryption default configuration\n?',
+        '',
+        content,
+    )
+    content = re.sub(r'(?m)^encryption_enabled_by_default_for_room_type: .*\n?', '', content)
+    anchor = re.search(r'(?m)^signing_key_path:', content)
+    if not anchor:
+        raise SystemExit('Could not find signing_key_path in local Synapse config')
+    managed = (
+        '# BEGIN managed room encryption default configuration\n'
+        '# Applies only to rooms created after Synapse reads this configuration.\n'
+        'encryption_enabled_by_default_for_room_type: all\n'
+        '# END managed room encryption default configuration\n\n'
+    )
+    return content[:anchor.start()] + managed + content[anchor.start():]
 
 def normalized(content):
     result = yaml.safe_load(without_managed_blocks(content))
@@ -91,7 +110,8 @@ def normalized(content):
     return result
 
 if target.exists():
-    current = target.read_text()
+    original_current = target.read_text()
+    current = ensure_room_encryption_default(original_current)
     if normalized(current) != normalized(expected):
         current_data = normalized(current)
         expected_data = normalized(expected)
@@ -103,7 +123,11 @@ if target.exists():
             + '; refusing to overwrite it'
         )
     # Preserve the existing local config byte-for-byte when equivalent.
-    print('Existing local Synapse config is compatible; preserving it.')
+    if current != original_current:
+        target.write_text(current)
+        print('Added the managed room-encryption default to the existing local Synapse configuration.')
+    else:
+        print('Existing local Synapse config is compatible; preserving it.')
 else:
     # Do not silently create a local config containing a production-specific IP.
     if 'ip_range_whitelist' in normalized(expected):

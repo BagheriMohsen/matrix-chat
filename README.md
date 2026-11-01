@@ -113,6 +113,11 @@ docker compose up -d --force-recreate nginx
 
 For Synapse upload-limit changes, update the matching stanza in data/synapse/homeserver.yaml (and homeserver.local.yaml for local use), then restart Synapse. Limits are upload-rate limits, not permanent storage quotas; no automatic media deletion is enabled.
 
+New rooms created locally default to end-to-end encryption through Synapse's
+`encryption_enabled_by_default_for_room_type: all` setting. It does not encrypt
+existing rooms retroactively, change existing encryption keys, or override a
+valid encryption event explicitly supplied by a client at room creation.
+
 ## Local testing and Ketesa
 
 Stop production first: both stacks use the same persistent data.
