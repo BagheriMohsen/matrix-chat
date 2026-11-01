@@ -9,12 +9,12 @@ calls=${3:-0}
 
 case "$mode" in
   production)
-    compose=(docker compose -f compose.yaml)
-    services=(postgres synapse nginx)
+    compose=(docker compose -f compose.yaml --profile admin)
+    services=(postgres synapse ketesa nginx)
     ;;
   local)
     compose=(docker compose -p matrix_local -f compose.local.yaml)
-    services=(postgres synapse synapse-admin nginx)
+    services=(postgres synapse ketesa nginx)
     ;;
   *)
     echo "Mode must be production or local (use: make MODE=local ...)." >&2
@@ -23,9 +23,8 @@ case "$mode" in
 esac
 
 [[ $calls == 0 || $calls == 1 ]] || { echo "CALLS must be 0 or 1." >&2; exit 2; }
-calls_compose=(docker compose -f compose.yaml --profile calls)
 if [[ $calls == 1 ]]; then
-  [[ $mode == production ]] || { echo "CALLS=1 is supported only for the production Compose profile." >&2; exit 2; }
+  [[ $mode == production ]] || { echo "CALLS=1 is supported only for production." >&2; exit 2; }
   compose+=(--profile calls)
   services+=(coturn)
 fi
@@ -36,20 +35,20 @@ require_env() {
 
 prepare_element_assets() {
   if [[ -f offline-bundle/static/element/index.html ]]; then
-    local element_checksum
+    local checksum
     [[ -f offline-bundle/SHA256SUMS ]] || {
-      echo "offline-bundle has no checksum manifest; refusing to use unverified Element assets." >&2
-      exit 1
+      echo "offline-bundle has no checksum manifest." >&2; exit 1;
     }
-    element_checksum=$(awk '$2 == "./static/element/index.html" {print $1}' offline-bundle/SHA256SUMS)
-    [[ $element_checksum =~ ^[a-f0-9]{64}$ ]] || {
-      echo "offline-bundle has no valid Element checksum; refusing to use unverified assets." >&2
-      exit 1
+    checksum=$(awk '$2 == "./static/element/index.html" {print $1}' offline-bundle/SHA256SUMS)
+    [[ $checksum =~ ^[a-f0-9]{64}$ ]] || {
+      echo "offline-bundle has no valid Element checksum." >&2; exit 1;
     }
-    printf '%s  %s\n' "$element_checksum" "offline-bundle/static/element/index.html" | sha256sum -c - >/dev/null
+    printf '%s  %s\n' "$checksum" offline-bundle/static/element/index.html | sha256sum -c - >/dev/null
     return
   fi
-  [[ ! -e offline-bundle ]] || { echo "offline-bundle exists but Element assets are incomplete; inspect it before retrying." >&2; exit 1; }
+  [[ ! -e offline-bundle ]] || {
+    echo "offline-bundle exists but Element assets are incomplete." >&2; exit 1;
+  }
   echo "Element assets are missing; preparing the verified offline bundle."
   bash scripts/offline-export.sh
 }
@@ -60,18 +59,13 @@ setting() {
 
 urls() {
   if [[ $mode == local ]]; then
-    local host element_port admin_port admin_path
+    local host element_port admin_port
     host=$(setting LOCAL_HOST)
     element_port=$(setting LOCAL_ELEMENT_PORT)
     admin_port=$(setting LOCAL_ADMIN_PORT)
-    admin_path=$(setting ADMIN_PATH)
     element_url="http://$host:$element_port"
     api_url="$element_url/_matrix/client/versions"
-    if [[ $admin_path == / ]]; then
-      admin_url="http://$host:$admin_port/"
-    else
-      admin_url="http://$host:$admin_port$admin_path/"
-    fi
+    admin_url="http://$host:$admin_port/admin/"
   else
     element_url=$(setting PUBLIC_BASE_URL)
     api_url="$element_url/_matrix/client/versions"
@@ -83,7 +77,7 @@ container_health() {
   local service=$1 container health name
   container=$("${compose[@]}" ps -q "$service" 2>/dev/null || true)
   if [[ -z $container ]]; then
-    printf '%s\t%s\t%s\n' "$service" "not-created" "unavailable"
+    printf '%s\t%s\t%s\n' "$service" not-created unavailable
     return
   fi
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf unavailable)
@@ -96,61 +90,55 @@ all_healthy() {
   for service in "${services[@]}"; do
     line=$(container_health "$service")
     health=${line##*$'\t'}
-    [[ $health == healthy ]] || return 1
+    [[ $health == healthy || $health == running ]] || return 1
   done
 }
 
 check_url() {
   local label=$1 url=$2
   if curl --fail --silent --location --max-time 5 -o /dev/null "$url"; then
-    printf '  %-14s %s (available)\n' "$label:" "$url"
+    printf '  %-16s %s (available)\n' "$label:" "$url"
     return 0
   fi
-  printf '  %-14s %s (unavailable)\n' "$label:" "$url"
+  printf '  %-16s %s (unavailable)\n' "$label:" "$url"
   return 1
 }
 
 dashboard() {
-  local bad=0 service name health turn_enabled turn_line turn_health make_prefix
+  local bad=0 service name health turn_enabled=0 turn_line turn_health make_prefix
   urls
-  printf '\nMatrix stack status\n'
-  printf '  Mode: %s\n' "$mode"
-  printf '\nServices\n'
+  printf '\nMatrix stack status\n  Mode: %s\n\nServices\n' "$mode"
   for service in "${services[@]}"; do
     IFS=$'\t' read -r _ name health <<< "$(container_health "$service")"
     printf '  %-14s %-32s %s\n' "$service" "$name" "$health"
-    [[ $health == healthy ]] || bad=1
+    [[ $health == healthy || $health == running ]] || bad=1
   done
   printf '\nURLs\n'
-  check_url "Element Web" "$element_url" || bad=1
-  check_url "Matrix API" "$api_url" || bad=1
+  check_url 'Element Web' "$element_url" || bad=1
+  check_url 'Matrix API' "$api_url" || bad=1
   if [[ -n $admin_url ]]; then
-    check_url "Synapse Admin" "$admin_url" || bad=1
+    check_url 'Ketesa Admin' "$admin_url" || bad=1
   else
-    printf '  %-14s disabled in production\n' "Synapse Admin:"
+    printf '  %-16s localhost/SSH tunnel only (/admin/)\n' 'Ketesa Admin:'
   fi
-  # TURN_ENABLED is optional for existing .env files; render-config defaults it
-  # to disabled, so do not ask its strict --get mode for an absent key.
-  turn_enabled=0
   if grep -q '^TURN_ENABLED=' .env; then
     turn_enabled=$(setting TURN_ENABLED)
   fi
   if [[ $turn_enabled == 1 ]]; then
-    turn_line=$("${calls_compose[@]}" ps -q coturn 2>/dev/null || true)
+    local turn_compose=(docker compose -f compose.yaml --profile calls)
+    turn_line=$("${turn_compose[@]}" ps -q coturn 2>/dev/null || true)
     if [[ -n $turn_line ]]; then
       turn_health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$turn_line" 2>/dev/null || printf unavailable)
     else
       turn_health=not-running
     fi
-    printf '  %-14s configured; coturn is %s (two-client call test required)\n' "Calling:" "$turn_health"
+    printf '  %-16s configured; coturn is %s (two-client call test required)\n' 'Calling:' "$turn_health"
   else
-    printf '  %-14s disabled\n' "Calling:"
+    printf '  %-16s disabled\n' 'Calling:'
   fi
-  make_prefix="make"
-  [[ $mode == local ]] && make_prefix="make MODE=local"
-  printf '\nLifecycle\n'
-  printf '  Restart: %s restart\n' "$make_prefix"
-  printf '  Update:  git pull --ff-only && %s update\n' "$make_prefix"
+  make_prefix=make
+  [[ $mode == local ]] && make_prefix='make MODE=local'
+  printf '\nLifecycle\n  Restart: %s restart\n  Update:  git pull --ff-only && %s update\n' "$make_prefix" "$make_prefix"
   if (( bad )); then
     printf '\nWarning: one or more services or endpoints are unavailable. See: make MODE=%s logs\n' "$mode" >&2
     return 1
@@ -168,8 +156,12 @@ initialize() {
       prepare_element_assets
       cp -a offline-bundle/static/element/. data/element/
     fi
-    [[ -f data/element/index.html ]] || { echo "Element assets are missing; run scripts/offline-export.sh first." >&2; exit 1; }
-    [[ -f secrets/tls/fullchain.pem && -f secrets/tls/privkey.pem ]] || { echo "Production TLS files are missing from secrets/tls/." >&2; exit 1; }
+    [[ -f data/element/index.html ]] || {
+      echo "Element assets are missing; run scripts/offline-export.sh first." >&2; exit 1;
+    }
+    [[ -f secrets/tls/fullchain.pem && -f secrets/tls/privkey.pem ]] || {
+      echo "Production TLS files are missing from secrets/tls/." >&2; exit 1;
+    }
   fi
 }
 
@@ -180,50 +172,83 @@ validate_calls() {
   fi
 }
 
+validate_compose() {
+  "${compose[@]}" config -q
+}
+
 wait_for_ready() {
-  for _ in $(seq 1 30); do
-    all_healthy && { dashboard; return 0; }
+  local i
+  for ((i=0; i<30; i++)); do
+    if all_healthy; then
+      dashboard
+      return
+    fi
     sleep 2
   done
   dashboard || true
-  echo "Timed out waiting for healthy services." >&2
+  echo 'Timed out waiting for running/healthy services.' >&2
   return 1
 }
 
-restart_stack() {
-  local affected=(synapse nginx)
-  if [[ $mode == local ]]; then
-    affected=(synapse synapse-admin nginx)
-  elif [[ $calls == 1 ]]; then
-    affected+=(coturn)
+# Validate the running Nginx configuration before reloading mounted config files.
+# This does not recreate or restart the Nginx container.
+reload_nginx_if_running() {
+  local container
+  container=$("${compose[@]}" ps -q nginx 2>/dev/null || true)
+  [[ -n $container ]] || return 0
+  if ! docker exec "$container" nginx -t; then
+    echo 'Nginx configuration validation failed; refusing to reload.' >&2
+    return 1
   fi
+  docker exec "$container" nginx -s reload
+}
+
+start_stack() {
   initialize
   validate_calls
-  "${compose[@]}" up -d --pull never --force-recreate "${affected[@]}"
+  validate_compose
+  "${compose[@]}" up -d --pull never "${services[@]}"
+  reload_nginx_if_running
+  wait_for_ready
+}
+
+update_stack() {
+  initialize
+  validate_calls
+  validate_compose
+  echo 'Applying checked-out repository changes; Git is not modified.'
+  "${compose[@]}" pull --policy missing "${services[@]}"
+  "${compose[@]}" up -d --pull never "${services[@]}"
+  reload_nginx_if_running
+  wait_for_ready
+}
+
+restart_stack() {
+  initialize
+  validate_calls
+  validate_compose
+  local affected=(synapse ketesa nginx)
+  [[ $calls == 1 ]] && affected+=(coturn)
+  "${compose[@]}" up -d --pull never --force-recreate --no-deps "${affected[@]}"
   wait_for_ready
 }
 
 case "$action" in
   up)
-    initialize
-    validate_calls
-    "${compose[@]}" up -d --pull never
-    wait_for_ready
+    start_stack
     ;;
   restart)
     restart_stack
     ;;
   update)
-    require_env
-    echo "Using checked-out repository changes; Git is not modified."
-    "${compose[@]}" pull --policy missing
-    restart_stack
+    update_stack
     ;;
   down)
-    if [[ $mode == production ]]; then
-      "${calls_compose[@]}" stop
-    else
-      "${compose[@]}" stop
+    require_env
+    "${compose[@]}" stop "${services[@]}"
+    # Stop an already-running TURN service even when CALLS=0.
+    if [[ $mode == production && $calls == 0 ]]; then
+      docker compose -f compose.yaml --profile calls stop coturn
     fi
     ;;
   status)
@@ -231,10 +256,11 @@ case "$action" in
     dashboard
     ;;
   logs)
+    require_env
     "${compose[@]}" logs --follow --tail=100 "${services[@]}"
     ;;
   *)
-    echo "Usage: stack.sh {up|down|restart|update|status|logs} {production|local} [0|1]" >&2
+    echo 'Usage: stack.sh {up|down|restart|update|status|logs} {production|local} [0|1]' >&2
     exit 2
     ;;
 esac

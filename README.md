@@ -89,8 +89,7 @@ Copy .env.example; it documents the small supported configuration surface.
 | POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD | synapse, synapse, placeholder | Database settings; replace the password. |
 | MAX_UPLOAD_SIZE | 20M | Per-file Synapse and Nginx limit. |
 | MEDIA_UPLOAD_LIMIT_24H, MEDIA_UPLOAD_LIMIT_7D | 100M, 500M | Per-user upload totals for 24 hours and 7 days. |
-| LOCAL_HOST, LOCAL_ELEMENT_PORT, LOCAL_ADMIN_PORT | localhost, 8080, 8081 | Local-only URLs and ports. |
-| ADMIN_PATH | / | Local Admin path: /, /panel, /admin, or /management. |
+| LOCAL_HOST, LOCAL_ELEMENT_PORT, LOCAL_ADMIN_PORT | localhost, 8080, 8081 | Local Element and Ketesa-only admin URLs and ports. |
 | TURN_ENABLED | 0 | Enable Synapse TURN credentials and optional coturn. |
 | TURN_HOST, TURN_EXTERNAL_IP | empty | Matrix domain and its public IPv4 address. |
 | TURN_PORT, TURN_TLS_PORT | 3478, 5349 | TURN and TURNS listening ports. |
@@ -114,24 +113,94 @@ docker compose up -d --force-recreate nginx
 
 For Synapse upload-limit changes, update the matching stanza in data/synapse/homeserver.yaml (and homeserver.local.yaml for local use), then restart Synapse. Limits are upload-rate limits, not permanent storage quotas; no automatic media deletion is enabled.
 
-## Local testing and Admin UI
+## Local testing and Ketesa
 
 Stop production first: both stacks use the same persistent data.
 
 ~~~sh
 bash scripts/local-init.sh
 docker compose -p matrix_local -f compose.local.yaml up -d --pull never
+# Create or verify the existing Synapse server-admin account for Ketesa.
 python3 scripts/local-admin.py
 ~~~
 
-Element is http://LOCAL_HOST:LOCAL_ELEMENT_PORT. Admin is http://LOCAL_HOST:LOCAL_ADMIN_PORT plus ADMIN_PATH; for ADMIN_PATH=/panel, use http://localhost:8081/panel/.
-
-The generated local proxy redirects /panel to /panel/, strips the path only before proxying, and supports the pinned Admin UI's relative static assets, refreshes, navigation, and API requests. It remains loopback-only. Production has neither the Admin container nor public Admin API access.
+Element is http://LOCAL_HOST:LOCAL_ELEMENT_PORT. Ketesa is
+http://LOCAL_HOST:LOCAL_ADMIN_PORT/admin/. It remains loopback-only, while the
+public listener has no admin API or admin UI route.
 
 ~~~sh
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/users.sh create alice
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/media.sh usage
 ~~~
+
+## Optional Ketesa administration
+
+Ketesa v1.5.1 is the only bundled admin interface. It supports Synapse
+v1.150.0 and newer, so it is compatible with this stack's pinned Synapse
+v1.161.0 and native username/password administrator accounts. It has no user
+database and authenticates against the existing Synapse endpoints.
+
+The service has no published port. Nginx serves its official prebuilt `/admin`
+variant only on the existing `127.0.0.1:8081` listener. The public HTTPS
+listener returns 404 for `/_synapse/admin/` and has no Ketesa route. `/panel/`
+and its subpaths return 404 on both listeners.
+
+The first rollout intentionally requires an explicit Nginx recreation; the
+admin Make targets never restart the messaging stack themselves:
+
+~~~sh
+# Pull or load the already-pinned image yourself, then explicitly apply only
+# the changed Nginx configuration at a chosen maintenance moment.
+docker compose -f compose.yaml --profile admin pull ketesa
+python3 scripts/render-config.py
+docker compose -f compose.yaml up -d --pull never --no-deps --force-recreate nginx
+
+make admin-up
+make admin-status
+make admin-check
+~~~
+
+Open `http://LOCAL_HOST:LOCAL_ADMIN_PORT/admin/` on the host, or tunnel it
+without exposing it publicly:
+
+~~~sh
+ssh -L 8081:127.0.0.1:8081 operator@server
+~~~
+
+Then browse to `http://localhost:8081/admin/` and sign in with an existing
+Synapse server-admin account. The Ketesa login is locked to that local URL and
+does not follow public well-known discovery, keeping its client and admin API
+same-origin. `make admin-down` stops only Ketesa; it changes no Synapse,
+PostgreSQL, Element, user, room, or encryption data.
+
+Ketesa exposes the native Synapse management surfaces for users, passwords,
+devices/sessions, rooms/memberships, media moderation and usage, rate limits,
+server inspection, and user/room statistics. It does not add a custom
+administration API. Use its confirmation dialogs carefully: deactivation
+removes login material, devices, tokens, and membership; erase, room deletion,
+history purge, and media deletion/quarantine may be irreversible and can make
+messages or encrypted history inaccessible. Test only on non-production test
+accounts and rooms first.
+
+## Chat feature matrix
+
+The pinned Element Web 1.12.33 already supplies the normal Matrix chat UI; no
+experimental flags or client forks were enabled. Server-side settings preserve
+E2EE, local media, native search, and private room operation.
+
+| Capability | Element Web 1.12.33 | Change / limitation |
+| --- | --- | --- |
+| Reactions; reply, edit, delete, forward | Available | Existing feature; permissions still follow room power levels. |
+| Pinned messages; threads; Spaces | Available | Existing feature; Spaces and threads require client support per user. |
+| Files, images, video, voice messages | Available | Existing media store and limits; voice recording needs HTTPS or localhost. |
+| Stickers and custom emoji packs | Available where a room has sticker/emoji content | No pack service added; admins/room owners must manage compatible packs. |
+| Search and history | Available | Search is per-client/server capability; encrypted history is readable only by devices with keys. |
+| Read receipts, typing, notifications, mentions | Available | User notification choices remain client-local. |
+| Profiles, avatars, room roles and permissions | Available | Room power levels govern moderation; Ketesa is server administration only. |
+| Polls | Available in Element Web | No server toggle is required; verify the actual client version before relying on polls operationally. |
+| One-to-one voice/video | Available only after optional TURN setup | Enable `TURN_ENABLED=1` and use `make up CALLS=1`; test two real clients. |
+| Group calls / MatrixRTC | Not enabled | Requires a separately sized and tested SFU/LiveKit deployment. |
+| Element X Android/iOS parity | Not asserted | Mobile clients have separate release cadence; test each capability and E2EE workflow on the target app. |
 
 ## User administration and room permissions
 

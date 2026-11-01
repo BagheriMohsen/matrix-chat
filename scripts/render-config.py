@@ -14,7 +14,6 @@ ENV_FILE = ROOT / ".env"
 DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$")
 HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
 SIZE = re.compile(r"[1-9][0-9]*(?:[KMG])?")
-ADMIN_PATH = re.compile(r"/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*)?")
 
 
 def fail(message):
@@ -77,9 +76,6 @@ def validate(values):
             fail(f"{key} must be between 1024 and 65535")
     if local_ports["LOCAL_ELEMENT_PORT"] == local_ports["LOCAL_ADMIN_PORT"]:
         fail("LOCAL_ELEMENT_PORT and LOCAL_ADMIN_PORT must differ")
-    path = required(values, "ADMIN_PATH")
-    if not ADMIN_PATH.fullmatch(path):
-        fail("ADMIN_PATH must be / or an absolute path without a trailing slash")
     turn_enabled = values.get("TURN_ENABLED", "0")
     if turn_enabled not in {"0", "1"}:
         fail("TURN_ENABLED must be 0 or 1")
@@ -112,7 +108,7 @@ def validate(values):
         if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", secret):
             fail("TURN_SHARED_SECRET must be at least 32 safe characters")
         turn.update({"host": turn_host, "external_ip": str(external_ip), "secret": secret, **ports})
-    return server_name, public_url.rstrip("/"), host, path, turn
+    return server_name, public_url.rstrip("/"), host, turn
 
 
 def turn_synapse_config(turn):
@@ -169,7 +165,7 @@ def write_template(source, destination, replacements):
 
 def main():
     values = read_env()
-    server_name, public_url, host, admin_path, turn = validate(values)
+    server_name, public_url, host, turn = validate(values)
     arguments = sys.argv[1:]
     if arguments:
         if len(arguments) == 2 and arguments[0] == "--get" and arguments[1] in values:
@@ -179,20 +175,6 @@ def main():
             raise SystemExit("Usage: render-config.py [--homeserver|--turn-synapse] | --get VARIABLE")
     local_element_url = f"http://{host}:{values['LOCAL_ELEMENT_PORT']}"
     local_admin_url = f"http://{host}:{values['LOCAL_ADMIN_PORT']}"
-    if admin_path == "/":
-        admin_location = "  location / { proxy_pass http://synapse-admin:80; }"
-    else:
-        admin_location = (
-            f"  location = {admin_path} {{ return 301 {admin_path}/; }}\n"
-            f"  location ^~ {admin_path}/ {{\n"
-            f"    rewrite ^{admin_path}/(.*)$ /$1 break;\n"
-            "    proxy_pass http://synapse-admin:80;\n"
-            "    proxy_set_header Host $host;\n"
-            "    proxy_set_header X-Real-IP $remote_addr;\n"
-            "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
-            "    proxy_set_header X-Forwarded-Proto $scheme;\n"
-            "  }"
-        )
     common = {
         "MATRIX_SERVER_NAME": server_name,
         "PUBLIC_BASE_URL": public_url,
@@ -200,14 +182,13 @@ def main():
         "LOCAL_ELEMENT_URL": local_element_url,
         "LOCAL_ADMIN_URL": local_admin_url,
         "MAX_UPLOAD_SIZE_NGINX": nginx_size(values["MAX_UPLOAD_SIZE"]),
-        "ADMIN_UI_LOCATION": admin_location,
         "VOIP_UI_ENABLED": "true" if turn["enabled"] else "false",
     }
     write_template("config/nginx/site.conf", ROOT / "data/nginx/site.conf", common)
     write_template("config/nginx/site.local.conf", ROOT / "data/nginx/site.local.conf", common)
     write_template("config/element/config.json", ROOT / "data/element/config.json", common)
     write_template("config/element/config.local.json", ROOT / "data/element/config.local.json", common)
-    write_template("config/admin/config.local.json", ROOT / "data/admin/config.json", common)
+    write_template("config/ketesa/config.json", ROOT / "data/ketesa/config.json", common)
     if turn["enabled"]:
         turn_destination = ROOT / "data/coturn/turnserver.conf"
         write_template("config/coturn/turnserver.conf.template", turn_destination, {

@@ -4,7 +4,7 @@
 MODE ?= production
 CALLS ?= 0
 
-.PHONY: up down restart update status logs help
+.PHONY: up down restart update status logs admin-up admin-down admin-status admin-logs admin-check help
 
 up:
 	@bash scripts/stack.sh up "$(MODE)" "$(CALLS)"
@@ -24,6 +24,23 @@ status:
 logs:
 	@bash scripts/stack.sh logs "$(MODE)" "$(CALLS)"
 
+# Ketesa is deliberately separate from the normal stack lifecycle. These
+# commands never restart Nginx, Synapse, or PostgreSQL.
+admin-up:
+	@bash scripts/admin.sh up
+
+admin-down:
+	@bash scripts/admin.sh down
+
+admin-status:
+	@bash scripts/admin.sh status
+
+admin-logs:
+	@bash scripts/admin.sh logs
+
+admin-check:
+	@bash scripts/admin.sh check
+
 help:
 	@printf '%s\n' \
 	  'Matrix stack lifecycle commands' \
@@ -34,6 +51,11 @@ help:
 	  '  make update             Use checked-out changes; pull missing pinned images and restart' \
 	  '  make status             Show health and checked URLs' \
 	  '  make logs               Follow production logs' \
+	  '  make admin-up           Start only the optional localhost-only Ketesa UI' \
+	  '  make admin-down         Stop only Ketesa' \
+	  '  make admin-status       Show Ketesa status' \
+	  '  make admin-logs         Follow Ketesa logs' \
+	  '  make admin-check        Check Ketesa and its localhost-only route' \
 	  '  make up CALLS=1         Start production with optional coturn' \
 	  '' \
 	  'Use MODE=local explicitly for the localhost-only stack:' \

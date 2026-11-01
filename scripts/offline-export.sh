@@ -14,7 +14,7 @@ python3 scripts/render-config.py
 bundle_dir=$(mktemp -d .offline-bundle.XXXXXX)
 trap 'rm -rf "$bundle_dir"' EXIT
 mkdir -p "$bundle_dir/images" "$bundle_dir/static/element"
-images=(postgres:17.11-alpine3.24 matrixdotorg/synapse:v1.161.0 nginx:1.30.6-alpine3.24-slim)
+images=(postgres:17.11-alpine3.24 matrixdotorg/synapse:v1.161.0 nginx:1.30.6-alpine3.24-slim ghcr.io/etkecc/ketesa:v1.5.1-subpath-admin@sha256:315dc260791fb9bccbb1f63ce396c4bd34a47d9ac8027612af93858745d71f95)
 case ${INCLUDE_CALLS:-0} in
   0) ;;
   1) images+=(coturn/coturn:4.6.3-r3) ;;

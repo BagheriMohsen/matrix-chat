@@ -11,18 +11,24 @@ services:
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.local.yaml
 
-  synapse-admin:
-    image: awesometechnologies/synapse-admin:0.11.4
+  ketesa:
+    image: ghcr.io/etkecc/ketesa:v1.5.1-subpath-admin@sha256:315dc260791fb9bccbb1f63ce396c4bd34a47d9ac8027612af93858745d71f95
     platform: linux/amd64
     restart: unless-stopped
+    depends_on:
+      synapse: {condition: service_healthy}
     volumes:
-      - ./data/admin/config.json:/app/config.json:ro
-    networks: [frontend]
+      - ./data/ketesa/config.json:/var/public/config.json:ro
+    networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/config.json"]
-      interval: 20s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 30s
       timeout: 5s
-      retries: 6
+      retries: 3
     logging:
       driver: local
       options: {max-size: "10m", max-file: "3"}
@@ -33,7 +39,7 @@ services:
     restart: unless-stopped
     depends_on:
       synapse: {condition: service_healthy}
-      synapse-admin: {condition: service_healthy}
+      ketesa: {condition: service_healthy}
     ports:
       - "127.0.0.1:${LOCAL_ELEMENT_PORT}:80"
       - "127.0.0.1:${LOCAL_ADMIN_PORT}:81"

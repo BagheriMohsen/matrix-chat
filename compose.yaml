@@ -44,14 +44,29 @@ services:
       driver: local
       options: {max-size: "10m", max-file: "3"}
 
-  synapse-admin:
-    image: awesometechnologies/synapse-admin:0.11.4
+  # Optional administration UI. It has no published port; Nginx exposes it
+  # only through its existing loopback listener at /admin/.
+  ketesa:
+    # Official Ketesa /admin build, pinned to the v1.5.1 OCI index.
+    image: ghcr.io/etkecc/ketesa:v1.5.1-subpath-admin@sha256:315dc260791fb9bccbb1f63ce396c4bd34a47d9ac8027612af93858745d71f95
     platform: linux/amd64
+    profiles: [admin]
     restart: unless-stopped
     depends_on:
       synapse:
         condition: service_healthy
+    volumes:
+      - ./data/ketesa/config.json:/var/public/config.json:ro
     networks: [backend]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     logging:
       driver: local
       options: {max-size: "10m", max-file: "3"}
@@ -63,8 +78,6 @@ services:
     depends_on:
       synapse:
         condition: service_healthy
-      synapse-admin:
-        condition: service_started
     ports:
       - "80:80"
       - "443:443"

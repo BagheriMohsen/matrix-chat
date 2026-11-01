@@ -73,9 +73,9 @@ cache‌شده آفلاین کار می‌کنند.
 
 ## تنظیمات
 
-.env.example متغیرهای پشتیبانی‌شده را نشان می‌دهد: MATRIX_SERVER_NAME، PUBLIC_BASE_URL، متغیرهای PostgreSQL، MAX_UPLOAD_SIZE، MEDIA_UPLOAD_LIMIT_24H، MEDIA_UPLOAD_LIMIT_7D، LOCAL_HOST، LOCAL_ELEMENT_PORT، LOCAL_ADMIN_PORT و ADMIN_PATH.
+.env.example متغیرهای پشتیبانی‌شده را نشان می‌دهد: MATRIX_SERVER_NAME، PUBLIC_BASE_URL، متغیرهای PostgreSQL، MAX_UPLOAD_SIZE، MEDIA_UPLOAD_LIMIT_24H، MEDIA_UPLOAD_LIMIT_7D، LOCAL_HOST، LOCAL_ELEMENT_PORT و LOCAL_ADMIN_PORT.
 
-مقادیر پیش‌فرض upload به‌ترتیب 20M، 100M و 500M هستند. ADMIN_PATH به‌طور پیش‌فرض / است و مسیرهایی مانند /panel، /admin یا /management معتبرند. Compose متغیرها را در فایل‌های mount‌شده جای‌گذاری نمی‌کند؛ scripts/init.sh و scripts/render-config.py فایل‌های تولیدشده را در data/ می‌سازند و دامنه، URL، پورت، مسیر، نام دیتابیس و اندازه‌ها را اعتبارسنجی می‌کنند.
+مقادیر پیش‌فرض upload به‌ترتیب 20M، 100M و 500M هستند. Ketesa فقط در مسیر /admin/ در دسترس است. Compose متغیرها را در فایل‌های mount‌شده جای‌گذاری نمی‌کند؛ scripts/init.sh و scripts/render-config.py فایل‌های تولیدشده را در data/ می‌سازند و دامنه، URL، پورت، نام دیتابیس و اندازه‌ها را اعتبارسنجی می‌کنند.
 
 متغیرهای TURN_ENABLED، TURN_HOST، TURN_EXTERNAL_IP، TURN_PORT، TURN_TLS_PORT،
 TURN_MIN_PORT، TURN_MAX_PORT و TURN_SHARED_SECRET برای تماس اختیاری هستند.
@@ -106,9 +106,9 @@ docker compose -p matrix_local -f compose.local.yaml up -d --pull never
 python3 scripts/local-admin.py
 ~~~
 
-Element در http://LOCAL_HOST:LOCAL_ELEMENT_PORT و Admin در http://LOCAL_HOST:LOCAL_ADMIN_PORT به‌اضافهٔ ADMIN_PATH است. برای ADMIN_PATH=/panel از http://localhost:8081/panel/ استفاده کنید.
+Element در http://LOCAL_HOST:LOCAL_ELEMENT_PORT و Ketesa در http://LOCAL_HOST:LOCAL_ADMIN_PORT/admin/ است.
 
-پراکسی محلی مسیر بدون slash را به slash‌دار هدایت می‌کند و assetها، refresh، navigation و درخواست‌های API را پشتیبانی می‌کند. پنل به loopback محدود می‌ماند؛ در تولید کانتینر Admin یا دسترسی عمومی Admin API وجود ندارد.
+Ketesa فقط به loopback محدود می‌ماند؛ در تولید دسترسی عمومی Admin API یا پنل مدیریتی وجود ندارد.
 
 ~~~sh
 COMPOSE_FILE=compose.local.yaml COMPOSE_PROJECT_NAME=matrix_local scripts/users.sh create alice
