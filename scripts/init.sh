@@ -37,7 +37,7 @@ if [[ -d data/synapse ]]; then
 fi
 [[ ! -d data/postgres ]] || { echo "Existing database data found; refusing to overwrite it." >&2; exit 1; }
 umask 077
-mkdir -p data/synapse data/postgres data/element data/acme secrets/tls
+mkdir -p data/synapse data/postgres data/element data/acme secrets/tls secrets/push-tls
 
 # Generate Synapse's signing key and logging template with the official image.
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/data/synapse:/data" \
@@ -50,7 +50,7 @@ from pathlib import Path
 import secrets
 Path("data/synapse/registration_shared_secret").write_text(secrets.token_hex(32))
 PY
-chmod 700 data data/synapse data/postgres secrets secrets/tls
+chmod 700 data data/synapse data/postgres secrets secrets/tls secrets/push-tls
 chmod 755 data/element
 set_synapse_top_level_permissions
-echo "Initialization complete. Put a CA-issued fullchain.pem and privkey.pem in secrets/tls/ (mode 600), then run make up."
+echo "Initialization complete. Put CA-issued fullchain.pem and privkey.pem (mode 600) in both secrets/tls/ and secrets/push-tls/, then run make up."

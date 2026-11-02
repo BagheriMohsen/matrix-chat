@@ -1,5 +1,5 @@
 {
-  "restrictBaseUrl": "http://localhost:8081",
+  "restrictBaseUrl": "__LOCAL_ADMIN_URL__/admin",
   "wellKnownDiscovery": false,
   "corsCredentials": "same-origin",
   "menu": [

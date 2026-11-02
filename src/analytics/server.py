@@ -20,6 +20,7 @@ from pathlib import Path
 SYNAPSE_URL = os.environ.get("SYNAPSE_URL", "http://synapse:8008").rstrip("/")
 SESSION_TTL = int(os.environ.get("ANALYTICS_SESSION_TTL", "3600"))
 DATA_DIR = Path(os.environ.get("ANALYTICS_DATA_DIR", "/var/lib/analytics"))
+ANALYTICS_PATH = os.environ.get("ANALYTICS_PATH", "/analytics").rstrip("/") or "/analytics"
 SESSIONS = {}
 SESSIONS_LOCK = threading.Lock()
 SAMPLE_LOCK = threading.Lock()
@@ -177,7 +178,7 @@ def page(title, body):
 class Handler(BaseHTTPRequestHandler):
     def session_cookie(self, value):
         secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-        return value + "; Path=/analytics; HttpOnly; SameSite=Strict" + secure
+        return value + "; Path=" + ANALYTICS_PATH + "; HttpOnly; SameSite=Strict" + secure
 
     def send_html(self, status, content):
         encoded = content.encode()
@@ -186,11 +187,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self.send_response(204); self.end_headers(); return
-        if self.path == "/analytics/" or self.path == "/analytics":
+        if self.path == ANALYTICS_PATH + "/" or self.path == ANALYTICS_PATH:
             if not session(self):
-                self.send_html(HTTPStatus.UNAUTHORIZED, page("Analytics login", "<h1>Matrix Analytics</h1><form method=post action='/analytics/login'><input name=username placeholder='Admin username' required><input name=password type=password placeholder='Password' required><button>Sign in</button></form>")); return
-            self.send_html(200, page("Matrix Analytics", "<h1>Matrix Analytics</h1><p>Live server-admin metrics. Last-seen is recent activity, not presence. <a href='/analytics/logout'>Sign out</a></p><div id=cards class=grid></div><h2>History (actual samples)</h2><canvas id=chart width=1000 height=200></canvas><h2>Containers</h2><div id=containers></div><h2>Recent account activity</h2><table id=users><tr><th>User</th><th>Last seen</th><th>State</th></tr></table><script>const b=n=>n==null?'Unavailable':n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n+' B';fetch('/analytics/api/summary').then(r=>r.ok?r.json():Promise.reject()).then(d=>{let c=[['Users',d.users],['Rooms',d.rooms],['Active 5m',d.activity['5m']],['Active 1h',d.activity['1h']],['Active 24h',d.activity['24h']],['Active 7d',d.activity['7d']],['Media',d.media_files==null?'Unavailable':d.media_files+' files'],['Host RAM',b(d.host.ram_used)+' / '+b(d.host.ram_total)],['Host disk',b(d.host.disk_used)+' / '+b(d.host.disk_total)],['Uptime',Math.floor(d.host.uptime_seconds/3600)+'h']];cards.innerHTML=c.map(x=>'<div class=card><b>'+x[0]+'</b><br>'+x[1]+'</div>').join('');containers.innerHTML='<table><tr><th>Container ID</th><th>CPU</th><th>RAM</th></tr>'+d.containers.map(x=>'<tr><td>'+x.id+'</td><td>'+(x.cpu_percent==null?'Sampling…':x.cpu_percent+'%')+'</td><td>'+b(x.ram_bytes)+'</td></tr>').join('')+'</table>';users.innerHTML+ d.user_activity.map(x=>'<tr><td>'+x.user_id+'</td><td>'+new Date(x.last_seen_ts).toLocaleString()+'</td><td>'+(x.deactivated?'Deactivated':'Active account')+'</td></tr>').join('');let p=d.history,ctx=chart.getContext('2d');if(p.length>1){let m=Math.max(...p.map(x=>x.active_24h),1);ctx.strokeStyle='#8cc8ff';ctx.beginPath();p.forEach((x,i)=>{let X=i*1000/(p.length-1),Y=190-x.active_24h/m*170;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});ctx.stroke()}}).catch(()=>document.body.insertAdjacentHTML('beforeend','<p>Unable to load live metrics.</p>'))</script>")); return
-        if self.path == "/analytics/api/summary":
+                content = "<h1>Matrix Analytics</h1><form method=post action='/analytics/login'><input name=username placeholder='Admin username' required><input name=password type=password placeholder='Password' required><button>Sign in</button></form>".replace("/analytics", ANALYTICS_PATH)
+                self.send_html(HTTPStatus.UNAUTHORIZED, page("Analytics login", content)); return
+            content = "<h1>Matrix Analytics</h1><p>Live server-admin metrics. Last-seen is recent activity, not presence. <a href='/analytics/logout'>Sign out</a></p><div id=cards class=grid></div><h2>History (actual samples)</h2><canvas id=chart width=1000 height=200></canvas><h2>Containers</h2><div id=containers></div><h2>Recent account activity</h2><table id=users><tr><th>User</th><th>Last seen</th><th>State</th></tr></table><script>const b=n=>n==null?'Unavailable':n>1e9?(n/1e9).toFixed(2)+' GB':n>1e6?(n/1e6).toFixed(1)+' MB':n+' B';fetch('/analytics/api/summary').then(r=>r.ok?r.json():Promise.reject()).then(d=>{let c=[['Users',d.users],['Rooms',d.rooms],['Active 5m',d.activity['5m']],['Active 1h',d.activity['1h']],['Active 24h',d.activity['24h']],['Active 7d',d.activity['7d']],['Media',d.media_files==null?'Unavailable':d.media_files+' files'],['Host RAM',b(d.host.ram_used)+' / '+b(d.host.ram_total)],['Host disk',b(d.host.disk_used)+' / '+b(d.host.disk_total)],['Uptime',Math.floor(d.host.uptime_seconds/3600)+'h']];cards.innerHTML=c.map(x=>'<div class=card><b>'+x[0]+'</b><br>'+x[1]+'</div>').join('');containers.innerHTML='<table><tr><th>Container ID</th><th>CPU</th><th>RAM</th></tr>'+d.containers.map(x=>'<tr><td>'+x.id+'</td><td>'+(x.cpu_percent==null?'Sampling…':x.cpu_percent+'%')+'</td><td>'+b(x.ram_bytes)+'</td></tr>').join('')+'</table>';users.innerHTML+ d.user_activity.map(x=>'<tr><td>'+x.user_id+'</td><td>'+new Date(x.last_seen_ts).toLocaleString()+'</td><td>'+(x.deactivated?'Deactivated':'Active account')+'</td></tr>').join('');let p=d.history,ctx=chart.getContext('2d');if(p.length>1){let m=Math.max(...p.map(x=>x.active_24h),1);ctx.strokeStyle='#8cc8ff';ctx.beginPath();p.forEach((x,i)=>{let X=i*1000/(p.length-1),Y=190-x.active_24h/m*170;i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});ctx.stroke()}}).catch(()=>document.body.insertAdjacentHTML('beforeend','<p>Unable to load live metrics.</p>'))</script>".replace("/analytics", ANALYTICS_PATH)
+            self.send_html(200, page("Matrix Analytics", content)); return
+        if self.path == ANALYTICS_PATH + "/api/summary":
             value = session(self)
             if not value:
                 self.send_response(401); self.end_headers(); return
@@ -200,15 +203,15 @@ class Handler(BaseHTTPRequestHandler):
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, OSError, sqlite3.Error) as error:
                 encoded = json.dumps({"error": "metrics unavailable", "detail": str(error)}).encode(); self.send_response(502); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
             return
-        if self.path == "/analytics/logout":
+        if self.path == ANALYTICS_PATH + "/logout":
             cookie = SimpleCookie(self.headers.get("Cookie")); sid = cookie.get("analytics_session")
             if sid:
                 with SESSIONS_LOCK: SESSIONS.pop(sid.value, None)
-            self.send_response(303); self.send_header("Set-Cookie", self.session_cookie("analytics_session=; Max-Age=0")); self.send_header("Location", "/analytics/"); self.end_headers(); return
+            self.send_response(303); self.send_header("Set-Cookie", self.session_cookie("analytics_session=; Max-Age=0")); self.send_header("Location", ANALYTICS_PATH + "/"); self.end_headers(); return
         self.send_response(404); self.end_headers()
 
     def do_POST(self):
-        if self.path != "/analytics/login": self.send_response(404); self.end_headers(); return
+        if self.path != ANALYTICS_PATH + "/login": self.send_response(404); self.end_headers(); return
         length = int(self.headers.get("Content-Length", "0"))
         form = urllib.parse.parse_qs(self.rfile.read(min(length, 8192)).decode())
         username, password = form.get("username", [""])[0], form.get("password", [""])[0]
@@ -217,10 +220,10 @@ class Handler(BaseHTTPRequestHandler):
             token = login["access_token"]
             request_json("/_synapse/admin/v2/users?limit=1", token)
         except (urllib.error.HTTPError, urllib.error.URLError, KeyError):
-            self.send_html(HTTPStatus.FORBIDDEN, page("Access denied", "<p>Administrator authentication failed.</p><p><a href='/analytics/'>Try again</a></p>")); return
+            self.send_html(HTTPStatus.FORBIDDEN, page("Access denied", ("<p>Administrator authentication failed.</p><p><a href='/analytics/'>Try again</a></p>").replace("/analytics", ANALYTICS_PATH))); return
         sid = secrets.token_urlsafe(32)
         with SESSIONS_LOCK: SESSIONS[sid] = {"token": token, "expires": time.time() + SESSION_TTL}
-        self.send_response(303); self.send_header("Set-Cookie", self.session_cookie(f"analytics_session={sid}; Max-Age={SESSION_TTL}")); self.send_header("Location", "/analytics/"); self.end_headers()
+        self.send_response(303); self.send_header("Set-Cookie", self.session_cookie(f"analytics_session={sid}; Max-Age={SESSION_TTL}")); self.send_header("Location", ANALYTICS_PATH + "/"); self.end_headers()
 
     def log_message(self, *_):
         pass

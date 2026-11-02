@@ -14,6 +14,7 @@ ENV_FILE = ROOT / ".env"
 DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$")
 HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
 SIZE = re.compile(r"[1-9][0-9]*(?:[KMG])?")
+PUBLIC_PATH = re.compile(r"/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*)?")
 
 
 def fail(message):
@@ -54,6 +55,24 @@ def validate(values):
     parsed = urlparse(public_url)
     if parsed.scheme != "https" or parsed.netloc != server_name or parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
         fail("PUBLIC_BASE_URL must be https://MATRIX_SERVER_NAME with no path, port, query, or fragment")
+    push_domain = required(values, "PUSH_DOMAIN")
+    if not DOMAIN.fullmatch(push_domain) or push_domain == server_name:
+        fail("PUSH_DOMAIN must be a lowercase DNS name different from MATRIX_SERVER_NAME")
+    paths = {}
+    for key in ("ANALYTICS_PATH", "PANEL_PATH"):
+        paths[key] = required(values, key)
+        if not PUBLIC_PATH.fullmatch(paths[key]) or paths[key] == "/":
+            fail(f"{key} must be an absolute path without a trailing slash")
+    if paths["ANALYTICS_PATH"] == paths["PANEL_PATH"]:
+        fail("ANALYTICS_PATH and PANEL_PATH must differ")
+    if "/admin" in paths.values():
+        fail("ANALYTICS_PATH and PANEL_PATH cannot use /admin (reserved for Ketesa)")
+    try:
+        session_ttl = int(required(values, "ANALYTICS_SESSION_TTL"))
+    except ValueError:
+        fail("ANALYTICS_SESSION_TTL must be a positive number of seconds")
+    if session_ttl < 60:
+        fail("ANALYTICS_SESSION_TTL must be at least 60 seconds")
     for key in ("POSTGRES_DB", "POSTGRES_USER"):
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", required(values, key)):
             fail(f"{key} must be a PostgreSQL identifier")
@@ -108,7 +127,7 @@ def validate(values):
         if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", secret):
             fail("TURN_SHARED_SECRET must be at least 32 safe characters")
         turn.update({"host": turn_host, "external_ip": str(external_ip), "secret": secret, **ports})
-    return server_name, public_url.rstrip("/"), host, turn
+    return server_name, public_url.rstrip("/"), push_domain, paths, host, turn
 
 
 def turn_synapse_config(turn):
@@ -174,7 +193,7 @@ def write_template(source, destination, replacements):
 
 def main():
     values = read_env()
-    server_name, public_url, host, turn = validate(values)
+    server_name, public_url, push_domain, paths, host, turn = validate(values)
     arguments = sys.argv[1:]
     if arguments:
         if len(arguments) == 2 and arguments[0] == "--get" and arguments[1] in values:
@@ -187,6 +206,9 @@ def main():
     common = {
         "MATRIX_SERVER_NAME": server_name,
         "PUBLIC_BASE_URL": public_url,
+        "PUSH_DOMAIN": push_domain,
+        "PUSH_PUBLIC_URL": f"https://{push_domain}",
+        **paths,
         "LOCAL_HOST": host,
         "LOCAL_ELEMENT_URL": local_element_url,
         "LOCAL_ADMIN_URL": local_admin_url,

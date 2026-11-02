@@ -4,13 +4,13 @@
 
 <a id="english"></a>
 
-A small private Matrix stack with Synapse, PostgreSQL, Nginx, and Element Web. Production runs exactly three persistent containers: Nginx, Synapse, and PostgreSQL. Synapse Admin exists only in the localhost-only development stack.
+A small private Matrix stack with Synapse, PostgreSQL, Nginx, Element Web, self-hosted ntfy push, Ketesa, and an authenticated Analytics dashboard. All public deployment values are rendered from `.env`; generated files remain ignored.
 
 Federation, public registration, guests, public room discovery, aliases, and public Admin API access are disabled. E2EE works, but users must keep recovery keys and verify devices.
 
 ## Requirements
 
-AMD64 Linux, Docker Engine and Compose, Python 3, curl, tar, a DNS name, and a CA-issued HTTPS certificate. Put fullchain.pem and privkey.pem (mode 600) in secrets/tls/. This project does not issue or renew certificates.
+AMD64 Linux, Docker Engine and Compose, Python 3, curl, tar, public DNS for the Matrix and push domains, and CA-issued HTTPS certificates. Put the Matrix certificate in `secrets/tls/` and the push certificate in `secrets/push-tls/` (each `fullchain.pem` and `privkey.pem`, mode 600). This project does not issue or renew certificates.
 
 ## Quick installation
 
@@ -25,10 +25,13 @@ Edit .env before initialization:
 ~~~dotenv
 MATRIX_SERVER_NAME=matrix.example.com
 PUBLIC_BASE_URL=https://matrix.example.com
+PUSH_DOMAIN=push.example.com
 POSTGRES_PASSWORD=use-a-long-random-password-here
 ~~~
 
-MATRIX_SERVER_NAME is the permanent Matrix identity in user IDs and room addresses. Never change it after scripts/init.sh initializes the server.
+`MATRIX_SERVER_NAME` is the permanent Matrix identity in user IDs and room addresses. Never change it after `scripts/init.sh` initializes the server. Set it to the existing identity before updating an established installation.
+
+To update an existing installation, retain its complete `.env`, `data/`, and `secrets/` directories; add `PUSH_DOMAIN`, `ANALYTICS_PATH`, and `PANEL_PATH` with the values already in use, run `python3 scripts/render-config.py`, validate Nginx, then use `make update`. Do not rerun initialization with a different Matrix server name or replace generated Synapse keys.
 
 Initialize once so the TLS directory exists, install certificates, then start. On
 the first online `make up`, pinned images and the checksum-verified Element Web
@@ -37,12 +40,13 @@ archive are prepared automatically. Later offline starts reuse a verified
 
 ~~~sh
 bash scripts/init.sh
-chmod 600 secrets/tls/fullchain.pem secrets/tls/privkey.pem
+# Install certificates for MATRIX_SERVER_NAME and PUSH_DOMAIN.
+chmod 600 secrets/tls/{fullchain,privkey}.pem secrets/push-tls/{fullchain,privkey}.pem
 make up
 scripts/users.sh admin admin
 ~~~
 
-Element is at PUBLIC_BASE_URL. Production does not include Synapse Admin and returns 404 for /_synapse/admin/. The final command creates the first administrator from inside Synapse and prompts for its password.
+Element is at `PUBLIC_BASE_URL`, push is at `https://PUSH_DOMAIN`, Ketesa is loopback-only at `/admin/`, and Analytics is at `PUBLIC_BASE_URL + ANALYTICS_PATH`. Production returns 404 for `/_synapse/admin/`. The final command creates the first administrator from inside Synapse and prompts for its password.
 
 ## Daily commands
 
@@ -86,6 +90,10 @@ Copy .env.example; it documents the small supported configuration surface.
 | --- | --- | --- |
 | MATRIX_SERVER_NAME | example.ir | Lowercase DNS server identity; immutable after initialization. |
 | PUBLIC_BASE_URL | https://example.ir | Public HTTPS URL; same domain as server name. |
+| PUSH_DOMAIN | push.example.ir | Lowercase DNS name for self-hosted ntfy/UnifiedPush; requires its own certificate. |
+| ANALYTICS_PATH | /analytics | Public path for the authenticated Analytics dashboard. |
+| PANEL_PATH | /panel | Reserved 404 path; no Laravel/custom panel is included. |
+| ANALYTICS_SESSION_TTL | 3600 | Analytics login-session lifetime in seconds (minimum 60). |
 | POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD | synapse, synapse, placeholder | Database settings; replace the password. |
 | MAX_UPLOAD_SIZE | 20M | Per-file Synapse and Nginx limit. |
 | MEDIA_UPLOAD_LIMIT_24H, MEDIA_UPLOAD_LIMIT_7D | 100M, 500M | Per-user upload totals for 24 hours and 7 days. |
@@ -96,7 +104,9 @@ Copy .env.example; it documents the small supported configuration surface.
 | TURN_MIN_PORT, TURN_MAX_PORT | 49160, 49200 | UDP relay range. |
 | TURN_SHARED_SECRET | empty | Shared coturn/Synapse secret; at least 32 characters. |
 
-Compose does not interpolate mounted files. scripts/init.sh renders fresh Synapse configuration; scripts/render-config.py renders Nginx, Element, and Admin files under ignored data/. It validates domains, URLs, ports, paths, database names, and sizes without printing secrets.
+Compose does not interpolate mounted files. `scripts/init.sh` renders fresh Synapse configuration; `scripts/render-config.py` renders Nginx, Element, and Ketesa files under ignored `data/`. It validates domains, URLs, ports, paths, database names, and sizes without printing secrets. The pinned Ketesa image is built specifically for `/admin/`, so that route is intentionally fixed.
+
+For production, point public DNS A/AAAA records for both `MATRIX_SERVER_NAME` and `PUSH_DOMAIN` at this host, then install CA-issued certificates at `secrets/tls/` and `secrets/push-tls/` respectively. For local development, use `make MODE=local up`; it binds Element and the private admin listener only to `LOCAL_HOST` and the configured local ports. To check configuration before starting anything, run `python3 scripts/render-config.py`, `docker compose config -q`, and validate the rendered Nginx file with the pinned Nginx image.
 
 At first initialization, PostgreSQL receives POSTGRES_DB, POSTGRES_USER, and
 POSTGRES_PASSWORD from `.env`; the same values are rendered into Synapse's

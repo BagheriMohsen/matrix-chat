@@ -6,6 +6,13 @@ cd "$(dirname "$0")/.."
 action=${1:-}
 compose=(docker compose -f compose.yaml --profile admin)
 
+local_admin_url() {
+  local host port
+  host=$(python3 scripts/render-config.py --get LOCAL_HOST)
+  port=$(python3 scripts/render-config.py --get LOCAL_ADMIN_PORT)
+  printf 'http://%s:%s/admin/' "$host" "$port"
+}
+
 require_env() {
   [[ -f .env ]] || { echo "Missing .env. Copy .env.example to .env first." >&2; exit 1; }
 }
@@ -24,7 +31,7 @@ case "$action" in
   up)
     prepare_config
     "${compose[@]}" up -d --pull never --no-deps ketesa
-    echo "Ketesa started. After Nginx has been explicitly reloaded, open http://localhost:8081/admin/ locally or through an SSH tunnel."
+    echo "Ketesa started. After Nginx has been explicitly reloaded, open $(local_admin_url) locally or through an SSH tunnel."
     ;;
   down)
     require_env
@@ -44,7 +51,7 @@ case "$action" in
     [[ -n $id ]] || { echo "Ketesa is not running; run make admin-up first." >&2; exit 1; }
     health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id")
     [[ $health == healthy ]] || { echo "Ketesa container is $health." >&2; exit 1; }
-    curl --fail --silent --max-time 5 http://127.0.0.1:8081/admin/ -o /dev/null
+    curl --fail --silent --max-time 5 "$(local_admin_url)" -o /dev/null
     echo "Ketesa is healthy and the localhost-only /admin/ route responds. Log in manually with an existing Synapse server-admin account."
     ;;
   *)

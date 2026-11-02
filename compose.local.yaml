@@ -44,7 +44,8 @@ services:
       ANALYTICS_BIND: "0.0.0.0"
       ANALYTICS_PORT: "8080"
       ANALYTICS_DATA_DIR: /var/lib/analytics
-      ANALYTICS_SESSION_TTL: "3600"
+      ANALYTICS_SESSION_TTL: ${ANALYTICS_SESSION_TTL}
+      ANALYTICS_PATH: ${ANALYTICS_PATH}
       SYNAPSE_URL: http://synapse:8008
     user: "${ANALYTICS_UID:-1000}:${ANALYTICS_GID:-1000}"
     volumes:

@@ -66,12 +66,13 @@ urls() {
     element_url="http://$host:$element_port"
     api_url="$element_url/_matrix/client/versions"
     admin_url="http://$host:$admin_port/admin/"
-    analytics_url="http://$host:$admin_port/analytics/"
+    analytics_path=$(setting ANALYTICS_PATH)
+    analytics_url="http://$host:$admin_port$analytics_path/"
   else
     element_url=$(setting PUBLIC_BASE_URL)
     api_url="$element_url/_matrix/client/versions"
     admin_url=""
-    analytics_url="$(setting PUBLIC_BASE_URL)/analytics/"
+    analytics_url="$(setting PUBLIC_BASE_URL)$(setting ANALYTICS_PATH)/"
   fi
 }
 
@@ -176,6 +177,9 @@ initialize() {
     bash scripts/element-theme.sh data/element
     [[ -f secrets/tls/fullchain.pem && -f secrets/tls/privkey.pem ]] || {
       echo "Production TLS files are missing from secrets/tls/." >&2; exit 1;
+    }
+    [[ -f secrets/push-tls/fullchain.pem && -f secrets/push-tls/privkey.pem ]] || {
+      echo "Push TLS files are missing from secrets/push-tls/." >&2; exit 1;
     }
   fi
 }

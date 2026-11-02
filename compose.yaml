@@ -83,7 +83,8 @@ services:
       ANALYTICS_BIND: "0.0.0.0"
       ANALYTICS_PORT: "8080"
       ANALYTICS_DATA_DIR: /var/lib/analytics
-      ANALYTICS_SESSION_TTL: "3600"
+      ANALYTICS_SESSION_TTL: ${ANALYTICS_SESSION_TTL}
+      ANALYTICS_PATH: ${ANALYTICS_PATH}
       SYNAPSE_URL: http://synapse:8008
     user: "${ANALYTICS_UID:-1000}:${ANALYTICS_GID:-1000}"
     volumes:
@@ -129,7 +130,7 @@ services:
       frontend:
       backend:
         aliases:
-          - push.koten.ir
+          - ${PUSH_DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ${MATRIX_SERVER_NAME}' http://127.0.0.1/health || exit 1"]
       interval: 30s
@@ -145,7 +146,7 @@ services:
     restart: unless-stopped
     command: serve
     environment:
-      NTFY_BASE_URL: https://push.koten.ir
+      NTFY_BASE_URL: https://${PUSH_DOMAIN}
       NTFY_LISTEN_HTTP: ":80"
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
       NTFY_BEHIND_PROXY: "true"
