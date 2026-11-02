@@ -126,11 +126,7 @@ services:
       - ./data/acme:/var/www/acme:ro
       - ./secrets/tls:/etc/nginx/tls:ro
       - ./secrets/push-tls:/etc/nginx/push-tls:ro
-    networks:
-      frontend:
-      backend:
-        aliases:
-          - ${PUSH_DOMAIN}
+    networks: [frontend, backend]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ${MATRIX_SERVER_NAME}' http://127.0.0.1/health || exit 1"]
       interval: 30s

@@ -108,6 +108,8 @@ Compose does not interpolate mounted files. `scripts/init.sh` renders fresh Syna
 
 For production, point public DNS A/AAAA records for both `MATRIX_SERVER_NAME` and `PUSH_DOMAIN` at this host, then install CA-issued certificates at `secrets/tls/` and `secrets/push-tls/` respectively. For local development, use `make MODE=local up`; it binds Element and the private admin listener only to `LOCAL_HOST` and the configured local ports. To check configuration before starting anything, run `python3 scripts/render-config.py`, `docker compose config -q`, and validate the rendered Nginx file with the pinned Nginx image.
 
+`PUSH_DOMAIN` must resolve publicly from the Synapse container. It is deliberately not a Docker network alias: mapping a public push hostname to a Docker-private address causes Synapse's SSRF protection to reject push delivery. Nginx reaches ntfy through the stable internal `ntfy` service name instead.
+
 At first initialization, PostgreSQL receives POSTGRES_DB, POSTGRES_USER, and
 POSTGRES_PASSWORD from `.env`; the same values are rendered into Synapse's
 database configuration. Changing POSTGRES_PASSWORD later does **not** rotate an
