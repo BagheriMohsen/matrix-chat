@@ -34,7 +34,9 @@ services:
       SYNAPSE_NO_TLS: "true"
     volumes:
       - ./data/synapse:/data
-    networks: [backend]
+    # Backend retains database isolation; frontend supplies the default route
+    # needed for public HTTPS push delivery. Recreate Synapse after changing it.
+    networks: [frontend, backend]
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/_matrix/client/versions', timeout=3)\""]
       interval: 20s
