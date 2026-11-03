@@ -1,0 +1,59 @@
+# Opt-in MatrixRTC overlay. It is intentionally not referenced by normal make
+# targets; see docs/matrixrtc.md for the approved production invocation.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    platform: linux/amd64
+    profiles: [matrixrtc]
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./data/matrixrtc/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7881:7881/tcp"
+      - "7881:7881/udp"
+      - "50000-50100:50000-50100/udp"
+    networks: [frontend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: "1.00"
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
+
+  lk-jwt-service:
+    image: ghcr.io/element-hq/lk-jwt-service:0.9.0
+    platform: linux/amd64
+    profiles: [matrixrtc]
+    restart: unless-stopped
+    environment:
+      LIVEKIT_JWT_BIND: "0.0.0.0:8080"
+      LIVEKIT_URL: "wss://${CALL_DOMAIN:-}/livekit/sfu"
+      LIVEKIT_KEY_FROM_FILE: /run/secrets/matrixrtc/livekit-api-key
+      LIVEKIT_SECRET_FROM_FILE: /run/secrets/matrixrtc/livekit-api-secret
+      LIVEKIT_AS_REGISTRATION_FILE: /run/secrets/matrixrtc/appservice.yaml
+      LIVEKIT_HS_SERVER_NAME: "${MATRIX_SERVER_NAME}"
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: "${MATRIX_SERVER_NAME}"
+      LIVEKIT_REMOTE_CAN_PUBLISH_HOMESERVERS: ""
+      LIVEKIT_SANITY_CHECK_INTERVAL_SECONDS: "30"
+      LIVEKIT_LOG_LEVEL: info
+    volumes:
+      - ./secrets/matrixrtc:/run/secrets/matrixrtc:ro
+    networks: [frontend]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: "0.50"
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: local
+      options: {max-size: "10m", max-file: "3"}

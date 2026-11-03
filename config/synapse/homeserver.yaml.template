@@ -9,7 +9,7 @@ listeners:
     type: http
     x_forwarded: true
     resources:
-      - names: [client]
+      - names: [__SYNAPSE_LISTENER_RESOURCES__]
         compress: false
 
 database:
@@ -43,6 +43,7 @@ media_upload_limits:
     max_size: __MEDIA_UPLOAD_LIMIT_7D__
 __RETENTION_CONFIG__
 __TURN_CONFIG__
+__MATRIX_RTC_CONFIG__
 url_preview_enabled: false
 default_identity_server: null
 allow_public_rooms_without_auth: false

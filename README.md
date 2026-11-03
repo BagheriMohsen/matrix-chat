@@ -8,6 +8,10 @@ A small private Matrix stack with Synapse, PostgreSQL, Nginx, Element Web, self-
 
 Federation, public registration, guests, public room discovery, aliases, and public Admin API access are disabled. E2EE works, but users must keep recovery keys and verify devices.
 
+Optional MatrixRTC voice/video calling is prepared but disabled by default. It is
+isolated from the normal stack and requires separate DNS, TLS, firewall, and
+restart approval; see [MatrixRTC calling](docs/matrixrtc.md).
+
 ## Requirements
 
 AMD64 Linux, Docker Engine and Compose, Python 3, curl, tar, public DNS for the Matrix and push domains, and CA-issued HTTPS certificates. Put the Matrix certificate in `secrets/tls/` and the push certificate in `secrets/push-tls/` (each `fullchain.pem` and `privkey.pem`, mode 600). This project does not issue or renew certificates.
@@ -299,13 +303,13 @@ ultimately decide) can set `m.room.retention` with a blank state key and one of:
 | 30 days | `2592000000` |
 | 90 days | `7776000000` |
 
-Element Web 1.12.33 has no supported Room Settings picker for this experimental
-Matrix feature. Without a client fork, an authorized room admin can send the
-native state event through Element's `/devtools` command: **Send custom state
-event**, type `m.room.retention`, leave the state key blank, and use the selected
-JSON content above. Ordinary members cannot send this state event at normal room
-power levels; Synapse also clamps any requested lifetime to 1–90 days. Native
-Synapse does not restrict policies to only the listed presets.
+The loopback-only Ketesa Admin panel links to the authenticated **Room
+retention** interface, where a server admin can search rooms, inspect the raw
+room override, and select 24 hours, 7 days, 30 days, or a bounded custom value.
+It sends the supported Matrix client state event as the administrator's own
+Matrix account; it does not write PostgreSQL or impersonate a room member. See
+[room-retention administration](docs/room-retention-admin.md) for the explicit
+authorization flow when that account is not already a room admin.
 
 Retention hides expired timeline events, then purges them from Synapse's database
 on a later daily job; existing messages are handled according to a newly set

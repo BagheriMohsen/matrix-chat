@@ -47,6 +47,9 @@ services:
       ANALYTICS_SESSION_TTL: ${ANALYTICS_SESSION_TTL}
       ANALYTICS_PATH: ${ANALYTICS_PATH}
       SYNAPSE_URL: http://synapse:8008
+      RETENTION_ALLOWED_MIN_MS: "86400000"
+      RETENTION_ALLOWED_MAX_MS: "7776000000"
+      RETENTION_DEFAULT_MAX_MS: ""
     user: "${ANALYTICS_UID:-1000}:${ANALYTICS_GID:-1000}"
     volumes:
       - ./src/analytics:/opt/analytics:ro

@@ -127,7 +127,34 @@ def validate(values):
         if not re.fullmatch(r"[A-Za-z0-9._~+/=-]{32,}", secret):
             fail("TURN_SHARED_SECRET must be at least 32 safe characters")
         turn.update({"host": turn_host, "external_ip": str(external_ip), "secret": secret, **ports})
-    return server_name, public_url.rstrip("/"), push_domain, paths, host, turn
+    matrix_rtc_enabled = values.get("MATRIX_RTC_ENABLED", "0")
+    if matrix_rtc_enabled not in {"0", "1"}:
+        fail("MATRIX_RTC_ENABLED must be 0 or 1")
+    matrix_rtc = {"enabled": matrix_rtc_enabled == "1"}
+    if matrix_rtc["enabled"]:
+        call_domain = required(values, "CALL_DOMAIN")
+        if not DOMAIN.fullmatch(call_domain) or call_domain in {server_name, push_domain}:
+            fail("CALL_DOMAIN must be a new lowercase DNS name, distinct from Matrix and push domains")
+        try:
+            public_ip = ipaddress.ip_address(required(values, "CALL_PUBLIC_IP"))
+        except ValueError:
+            fail("CALL_PUBLIC_IP must be a public IPv4 address")
+        if public_ip.version != 4 or not public_ip.is_global:
+            fail("CALL_PUBLIC_IP must be a public IPv4 address")
+        ports = {}
+        for key in ("CALL_RTC_UDP_PORT", "CALL_RTC_TCP_PORT", "CALL_RTC_UDP_MIN_PORT", "CALL_RTC_UDP_MAX_PORT"):
+            try:
+                ports[key] = int(required(values, key))
+            except ValueError:
+                fail(f"{key} must be a port number")
+            if not 1024 <= ports[key] <= 65535:
+                fail(f"{key} must be between 1024 and 65535")
+        if (ports["CALL_RTC_UDP_PORT"], ports["CALL_RTC_TCP_PORT"]) != (7881, 7881):
+            fail("CALL_RTC_UDP_PORT and CALL_RTC_TCP_PORT must both be 7881 for the supplied Compose overlay")
+        if (ports["CALL_RTC_UDP_MIN_PORT"], ports["CALL_RTC_UDP_MAX_PORT"]) != (50000, 50100):
+            fail("CALL_RTC_UDP_MIN_PORT and CALL_RTC_UDP_MAX_PORT must be 50000 and 50100 for the supplied Compose overlay")
+        matrix_rtc.update({"domain": call_domain, "public_ip": str(public_ip), **ports})
+    return server_name, public_url.rstrip("/"), push_domain, paths, host, turn, matrix_rtc
 
 
 def turn_synapse_config(turn):
@@ -145,6 +172,45 @@ def turn_synapse_config(turn):
         "turn_allow_guests: false\n"
         "# END managed TURN configuration\n"
     )
+
+
+def matrix_rtc_synapse_config(matrix_rtc):
+    if not matrix_rtc["enabled"]:
+        return ""
+    domain = matrix_rtc["domain"]
+    return f'''# BEGIN managed MatrixRTC configuration
+# MatrixRTC is opt-in. lk-jwt-service is registered separately as an
+# application service and Synapse proxies its authenticated client requests.
+experimental_features:
+  msc4143_enabled: true
+  msc4222_enabled: true
+  msc4502_enabled: true
+  msc4512_enabled: true
+max_event_delay_duration: 24h
+rc_delayed_event_mgmt:
+  per_second: 1
+  burst_count: 20
+matrix_rtc:
+  transports:
+    - type: livekit
+      url: wss://{domain}/livekit/sfu
+      # Retained for Element Web 1.12.x and other clients which still use it.
+      livekit_service_url: https://{domain}/livekit/jwt
+app_service_config_files:
+  - /data/matrixrtc-lk-jwt-service.yaml
+# END managed MatrixRTC configuration
+
+'''
+
+
+def matrix_client_well_known(public_url, matrix_rtc):
+    document = {"m.homeserver": {"base_url": public_url}}
+    if matrix_rtc["enabled"]:
+        document["org.matrix.msc4143.rtc_foci"] = [{
+            "type": "livekit",
+            "livekit_service_url": f"https://{matrix_rtc['domain']}/livekit/jwt",
+        }]
+    return json.dumps(document, separators=(",", ":"))
 
 
 def nginx_size(size):
@@ -193,14 +259,14 @@ def write_template(source, destination, replacements):
 
 def main():
     values = read_env()
-    server_name, public_url, push_domain, paths, host, turn = validate(values)
+    server_name, public_url, push_domain, paths, host, turn, matrix_rtc = validate(values)
     arguments = sys.argv[1:]
     if arguments:
         if len(arguments) == 2 and arguments[0] == "--get" and arguments[1] in values:
             print(values[arguments[1]])
             return
-        if arguments not in (["--homeserver"], ["--turn-synapse"]):
-            raise SystemExit("Usage: render-config.py [--homeserver|--turn-synapse] | --get VARIABLE")
+        if arguments not in (["--homeserver"], ["--turn-synapse"], ["--matrixrtc-synapse"]):
+            raise SystemExit("Usage: render-config.py [--homeserver|--turn-synapse|--matrixrtc-synapse] | --get VARIABLE")
     local_element_url = f"http://{host}:{values['LOCAL_ELEMENT_PORT']}"
     local_admin_url = f"http://{host}:{values['LOCAL_ADMIN_PORT']}"
     common = {
@@ -213,8 +279,13 @@ def main():
         "LOCAL_ELEMENT_URL": local_element_url,
         "LOCAL_ADMIN_URL": local_admin_url,
         "MAX_UPLOAD_SIZE_NGINX": nginx_size(values["MAX_UPLOAD_SIZE"]),
-        "VOIP_UI_ENABLED": "true" if turn["enabled"] else "false",
+        "VOIP_UI_ENABLED": "true" if turn["enabled"] or matrix_rtc["enabled"] else "false",
+        "ELEMENT_CALL_DISABLED": "false" if matrix_rtc["enabled"] else "true",
+        "MATRIX_CLIENT_WELL_KNOWN": matrix_client_well_known(public_url, matrix_rtc),
+        "MATRIX_RTC_NGINX_CONFIG": "",
     }
+    if matrix_rtc["enabled"]:
+        common["MATRIX_RTC_NGINX_CONFIG"] = (ROOT / "config/nginx/matrixrtc-server.conf.template").read_text().replace("__CALL_DOMAIN__", matrix_rtc["domain"])
     write_template("config/nginx/site.conf", ROOT / "data/nginx/site.conf", common)
     write_template("config/nginx/site.local.conf", ROOT / "data/nginx/site.local.conf", common)
     write_template("config/element/config.json", ROOT / "data/element/config.json", common)
@@ -234,12 +305,24 @@ def main():
         turn_destination.parent.chmod(0o700)
         turn_destination.chmod(0o600)
 
-    if arguments == ["--turn-synapse"]:
+    if arguments in (["--turn-synapse"], ["--matrixrtc-synapse"]):
         homeserver = ROOT / "data/synapse/homeserver.yaml"
         if not homeserver.is_file():
             fail("initialize Synapse before updating TURN configuration")
         content = homeserver.read_text()
-        for name in ("retention", "room permissions", "room encryption default", "TURN"):
+        # The existing deployment has one client listener. MatrixRTC's
+        # authorizer needs Synapse's OpenID endpoint, not federation. Keep the
+        # listener private behind the current reverse proxy and remove only the
+        # resource we manage on rollback.
+        listener_resources = "client, openid" if matrix_rtc["enabled"] else "client"
+        content, listener_count = re.subn(
+            r"(?m)^(\s*- names: \[)client(?:, openid)?(\])$",
+            rf"\g<1>{listener_resources}\g<2>",
+            content,
+        )
+        if listener_count != 1:
+            fail("could not find the managed Synapse client listener")
+        for name in ("retention", "room permissions", "room encryption default", "TURN", "MatrixRTC"):
             content = re.sub(
                 rf"(?ms)^# BEGIN managed {name} configuration\n.*?^# END managed {name} configuration\n?",
                 "",
@@ -250,7 +333,7 @@ def main():
         anchor = re.search(r"(?m)^signing_key_path:", content)
         if not anchor:
             fail("could not find signing_key_path in homeserver.yaml")
-        content = content[:anchor.start()] + retention_config() + room_permissions_config() + room_encryption_default_config() + turn_synapse_config(turn) + content[anchor.start():]
+        content = content[:anchor.start()] + retention_config() + room_permissions_config() + room_encryption_default_config() + turn_synapse_config(turn) + matrix_rtc_synapse_config(matrix_rtc) + content[anchor.start():]
         homeserver.write_text(content)
         homeserver.chmod(0o600)
         return
@@ -269,9 +352,11 @@ def main():
             "RETENTION_CONFIG": retention_config(),
             "ROOM_PERMISSIONS_CONFIG": room_permissions_config(),
             "ROOM_ENCRYPTION_DEFAULT_CONFIG": room_encryption_default_config(),
+            "SYNAPSE_LISTENER_RESOURCES": "client, openid" if matrix_rtc["enabled"] else "client",
             "SIGNING_KEY_PATH_JSON": json.dumps(f"/data/{server_name}.signing.key"),
             "LOG_CONFIG_PATH_JSON": json.dumps(f"/data/{server_name}.log.config"),
             "TURN_CONFIG": turn_synapse_config(turn),
+            "MATRIX_RTC_CONFIG": matrix_rtc_synapse_config(matrix_rtc),
         })
         write_template("config/synapse/homeserver.yaml.template", ROOT / "data/synapse/homeserver.yaml", synapse)
 

@@ -88,6 +88,11 @@ services:
       ANALYTICS_SESSION_TTL: ${ANALYTICS_SESSION_TTL}
       ANALYTICS_PATH: ${ANALYTICS_PATH}
       SYNAPSE_URL: http://synapse:8008
+      # Keep this in lockstep with the managed Synapse retention block. These
+      # values validate the admin UI before it sends a room-state event.
+      RETENTION_ALLOWED_MIN_MS: "86400000"
+      RETENTION_ALLOWED_MAX_MS: "7776000000"
+      RETENTION_DEFAULT_MAX_MS: ""
     user: "${ANALYTICS_UID:-1000}:${ANALYTICS_GID:-1000}"
     volumes:
       - ./src/analytics:/opt/analytics:ro
@@ -128,6 +133,9 @@ services:
       - ./data/acme:/var/www/acme:ro
       - ./secrets/tls:/etc/nginx/tls:ro
       - ./secrets/push-tls:/etc/nginx/push-tls:ro
+      # Empty until MatrixRTC is explicitly approved and enabled. Its dedicated
+      # vhost is rendered only then, so the existing TLS vhosts are unchanged.
+      - ./secrets/matrixrtc-tls:/etc/nginx/matrixrtc-tls:ro
     networks: [frontend, backend]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null --header 'Host: ${MATRIX_SERVER_NAME}' http://127.0.0.1/health || exit 1"]
