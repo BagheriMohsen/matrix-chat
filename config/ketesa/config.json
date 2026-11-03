@@ -6,12 +6,12 @@
     {
       "label": "Analytics",
       "icon": "BarChart",
-      "url": "/analytics/"
+      "url": "__PUBLIC_BASE_URL____ANALYTICS_PATH__/"
     },
     {
       "label": "Room retention",
       "icon": "Schedule",
-      "url": "/analytics/retention/"
+      "url": "__PUBLIC_BASE_URL____ANALYTICS_PATH__/retention/"
     }
   ]
 }
