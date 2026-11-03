@@ -1,0 +1,15 @@
+# Rendered only while a CALL_DOMAIN is configured and MatrixRTC is disabled.
+# It permits HTTP-01 issuance without loading a call-domain TLS certificate.
+server {
+    listen 80;
+    server_name __CALL_DOMAIN__;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}

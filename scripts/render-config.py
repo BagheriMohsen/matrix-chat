@@ -130,11 +130,12 @@ def validate(values):
     matrix_rtc_enabled = values.get("MATRIX_RTC_ENABLED", "0")
     if matrix_rtc_enabled not in {"0", "1"}:
         fail("MATRIX_RTC_ENABLED must be 0 or 1")
-    matrix_rtc = {"enabled": matrix_rtc_enabled == "1"}
+    call_domain = values.get("CALL_DOMAIN", "")
+    if call_domain and (not DOMAIN.fullmatch(call_domain) or call_domain in {server_name, push_domain}):
+        fail("CALL_DOMAIN must be a lowercase DNS name, distinct from Matrix and push domains")
+    matrix_rtc = {"enabled": matrix_rtc_enabled == "1", "domain": call_domain}
     if matrix_rtc["enabled"]:
         call_domain = required(values, "CALL_DOMAIN")
-        if not DOMAIN.fullmatch(call_domain) or call_domain in {server_name, push_domain}:
-            fail("CALL_DOMAIN must be a new lowercase DNS name, distinct from Matrix and push domains")
         try:
             public_ip = ipaddress.ip_address(required(values, "CALL_PUBLIC_IP"))
         except ValueError:
@@ -153,7 +154,7 @@ def validate(values):
             fail("CALL_RTC_UDP_PORT and CALL_RTC_TCP_PORT must both be 7881 for the supplied Compose overlay")
         if (ports["CALL_RTC_UDP_MIN_PORT"], ports["CALL_RTC_UDP_MAX_PORT"]) != (50000, 50100):
             fail("CALL_RTC_UDP_MIN_PORT and CALL_RTC_UDP_MAX_PORT must be 50000 and 50100 for the supplied Compose overlay")
-        matrix_rtc.update({"domain": call_domain, "public_ip": str(public_ip), **ports})
+        matrix_rtc.update({"public_ip": str(public_ip), **ports})
     return server_name, public_url.rstrip("/"), push_domain, paths, host, turn, matrix_rtc
 
 
@@ -286,6 +287,8 @@ def main():
     }
     if matrix_rtc["enabled"]:
         common["MATRIX_RTC_NGINX_CONFIG"] = (ROOT / "config/nginx/matrixrtc-server.conf.template").read_text().replace("__CALL_DOMAIN__", matrix_rtc["domain"])
+    elif matrix_rtc["domain"]:
+        common["MATRIX_RTC_NGINX_CONFIG"] = (ROOT / "config/nginx/matrixrtc-acme-server.conf.template").read_text().replace("__CALL_DOMAIN__", matrix_rtc["domain"])
     write_template("config/nginx/site.conf", ROOT / "data/nginx/site.conf", common)
     write_template("config/nginx/site.local.conf", ROOT / "data/nginx/site.local.conf", common)
     write_template("config/element/config.json", ROOT / "data/element/config.json", common)
